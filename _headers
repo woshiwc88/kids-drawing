@@ -1,0 +1,15 @@
+/*
+  X-Content-Type-Options: nosniff
+
+/index.html
+  Cache-Control: no-cache
+
+/
+  Cache-Control: no-cache
+
+/service-worker.js
+  Cache-Control: no-cache
+
+/manifest.webmanifest
+  Content-Type: application/manifest+json
+  Cache-Control: no-cache

@@ -1,0 +1,1553 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#fff7ee">
+<meta name="description" content="适合小朋友的离线画画小应用">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<title>我的画 · 儿童画画</title>
+<style>
+/* ===== 设计变量 ===== */
+:root{
+  --bg:#fff7ee;
+  --bg2:#fff1f7;
+  --panel:#ffffff;
+  --ink:#4a3c58;
+  --ink-soft:#8d80a0;
+  --line:#efe6f7;
+  --brand:#ff8a5c;
+  --brand-2:#7c5cff;
+  --ok:#4cc86b;
+  --shadow:0 6px 18px rgba(110,70,150,.14);
+  --shadow-up:0 -8px 24px rgba(110,70,150,.16);
+  --safe-t:env(safe-area-inset-top,0px);
+  --safe-b:env(safe-area-inset-bottom,0px);
+  --topbar-h:56px;
+  --toolbar-h:74px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;height:100%;overflow:hidden;overscroll-behavior:none}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  color:var(--ink);
+  background:linear-gradient(180deg,var(--bg) 0%,var(--bg2) 100%);
+  position:fixed;inset:0;
+  user-select:none;-webkit-user-select:none;
+  -webkit-touch-callout:none;
+  touch-action:manipulation;
+}
+button{font-family:inherit;color:inherit;border:none;background:none;padding:0;cursor:pointer}
+.hidden{display:none !important}
+
+/* ===== 整体布局 ===== */
+#app{position:absolute;inset:0;display:flex;flex-direction:column;height:100%}
+
+/* 顶栏 */
+#topbar{
+  flex:0 0 auto;
+  height:calc(var(--topbar-h) + var(--safe-t));
+  padding:var(--safe-t) 10px 0;
+  display:flex;align-items:center;gap:8px;
+}
+.ic-btn{
+  width:48px;height:48px;min-width:48px;
+  border-radius:16px;
+  background:#fff;
+  box-shadow:var(--shadow);
+  font-size:23px;line-height:1;
+  display:flex;align-items:center;justify-content:center;
+  transition:transform .1s,opacity .15s;
+}
+.ic-btn:active{transform:scale(.92)}
+.ic-btn[disabled]{opacity:.32}
+.ic-btn.on{background:linear-gradient(180deg,#fff5ec,#ffe6d6);box-shadow:0 0 0 3px #ffd0b0,var(--shadow)}
+#title{
+  flex:1;text-align:center;font-size:20px;font-weight:800;letter-spacing:1px;
+  color:var(--brand-2);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.top-right{display:flex;gap:8px}
+
+/* 画布舞台 */
+#stage{
+  position:relative;
+  flex:1 1 auto;min-height:0;
+  margin:6px 8px 8px;
+  border-radius:22px;
+  background:#fff;
+  box-shadow:var(--shadow);
+  overflow:hidden;
+  touch-action:none;
+}
+#draw,#preview{
+  position:absolute;inset:0;
+  width:100%;height:100%;
+  display:block;
+  touch-action:none;
+}
+#preview{pointer-events:none}
+#hint{
+  position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  font-size:17px;color:var(--ink-soft);
+  background:rgba(255,255,255,.86);
+  padding:10px 18px;border-radius:999px;
+  pointer-events:none;transition:opacity .5s;
+}
+
+/* 底部工具栏 */
+#toolbar{
+  flex:0 0 auto;
+  height:calc(var(--toolbar-h) + var(--safe-b));
+  padding:0 4px var(--safe-b);
+  display:flex;align-items:stretch;
+  background:#fff;border-radius:22px 22px 0 0;
+  box-shadow:var(--shadow-up);
+}
+.tab{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:3px;font-size:12px;font-weight:700;color:var(--ink-soft);
+  border-radius:18px;margin:6px 3px;transition:transform .1s,background .15s;
+}
+.tab:active{transform:scale(.94)}
+.tab .tab-ic{font-size:24px;line-height:1}
+.tab.on{background:#f4efff;color:var(--brand-2)}
+.tab.danger.on{background:#ffefef;color:#e8433a}
+/* 颜色按钮上的当前色点 */
+.dot{
+  display:inline-block;width:22px;height:22px;border-radius:50%;
+  box-shadow:inset 0 0 0 2px #fff,0 0 0 2px #e6ddf2;
+}
+
+/* 弹出面板 */
+.panel{
+  position:absolute;left:0;right:0;
+  bottom:calc(var(--toolbar-h) + var(--safe-b));
+  background:#fff;border-radius:22px 22px 0 0;
+  box-shadow:var(--shadow-up);
+  padding:12px 14px calc(14px + var(--safe-b));
+  max-height:52%;overflow-y:auto;
+  -webkit-overflow-scrolling:touch;touch-action:pan-y;
+  animation:up .18s ease-out;
+  z-index:20;
+}
+@keyframes up{from{transform:translateY(16px);opacity:.4}to{transform:translateY(0);opacity:1}}
+.panel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.panel-head span{font-size:16px;font-weight:800}
+.close-x{
+  width:40px;height:40px;border-radius:14px;background:#f6f2fb;
+  font-size:22px;color:var(--ink-soft);line-height:1;
+}
+.sub-title{font-size:14px;font-weight:800;color:var(--ink-soft);margin:14px 0 8px}
+
+/* 颜色圆点 */
+.swatches{display:grid;grid-template-columns:repeat(6,1fr);gap:10px}
+.swatch{
+  position:relative;aspect-ratio:1/1;border-radius:50%;
+  box-shadow:inset 0 0 0 3px #fff,0 0 0 2px #e9e2f2,0 3px 8px rgba(110,70,150,.12);
+  transition:transform .12s;
+}
+.swatch:active{transform:scale(.9)}
+.swatch.on{transform:scale(1.06);box-shadow:inset 0 0 0 3px #fff,0 0 0 4px var(--brand-2),0 4px 10px rgba(110,70,150,.2)}
+.swatch.on::after{
+  content:"✓";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:20px;font-weight:900;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.35);
+}
+.panel-foot{margin-top:14px;display:flex;gap:10px}
+.more-color{
+  flex:1;height:52px;border-radius:18px;
+  background:linear-gradient(135deg,#ffd76e,#ff9ec4 55%,#9ad8ff);
+  color:#fff;font-size:17px;font-weight:900;
+  display:flex;align-items:center;justify-content:center;
+  text-shadow:0 1px 3px rgba(0,0,0,.18);box-shadow:var(--shadow);
+}
+.more-color:active{transform:scale(.97)}
+#colorPicker{position:absolute;opacity:0;width:0;height:0;pointer-events:none}
+
+/* 笔刷 / 尺寸 / 贴纸 / 图形 网格 */
+.grid-brush{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.grid-sticker{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.grid-shape{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.cell{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  min-height:64px;border-radius:18px;background:#f8f5fd;
+  font-size:26px;line-height:1;transition:transform .1s,box-shadow .15s;
+}
+.cell i{font-style:normal;font-size:11px;font-weight:700;color:var(--ink-soft)}
+.cell:active{transform:scale(.93)}
+.cell.on{background:#f1eaff;box-shadow:0 0 0 3px #cabaff inset}
+.cell.on i{color:var(--brand-2)}
+.grid-size{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.size-btn{
+  height:56px;border-radius:18px;background:#f8f5fd;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
+  font-size:13px;font-weight:800;color:var(--ink-soft);
+}
+.size-btn .bar{background:var(--ink);border-radius:99px}
+.size-btn.on{background:#f1eaff;color:var(--brand-2);box-shadow:0 0 0 3px #cabaff inset}
+.size-btn.on .bar{background:var(--brand-2)}
+.tip{font-size:12px;color:var(--ink-soft);margin-top:12px;text-align:center;line-height:1.5}
+
+/* 弹窗 */
+.modal{position:fixed;inset:0;background:rgba(70,45,95,.35);display:flex;align-items:center;justify-content:center;z-index:60;padding:20px}
+.card{
+  width:min(330px,86vw);background:#fff;border-radius:28px;
+  padding:22px 18px 18px;text-align:center;box-shadow:0 16px 40px rgba(70,45,95,.28);
+  animation:pop .18s ease-out;
+}
+@keyframes pop{from{transform:scale(.9);opacity:.3}to{transform:scale(1);opacity:1}}
+.card-emoji{font-size:44px;line-height:1}
+.card-title{font-size:19px;font-weight:900;margin:10px 0 18px}
+.card-actions{display:flex;gap:10px}
+.btn{
+  flex:1;height:56px;border-radius:19px;font-size:18px;font-weight:900;
+  display:flex;align-items:center;justify-content:center;transition:transform .1s;
+}
+.btn:active{transform:scale(.96)}
+.btn.primary{background:linear-gradient(135deg,#ff9d6b,#ff7b7b);color:#fff;box-shadow:var(--shadow)}
+.btn.ghost{background:#f4f0fa;color:var(--ink-soft)}
+
+/* 我的作品页 */
+.page{position:fixed;inset:0;background:linear-gradient(180deg,var(--bg),#fdf3ff);z-index:70;display:flex;flex-direction:column;touch-action:pan-y}
+.page-head{
+  flex:0 0 auto;height:calc(var(--topbar-h) + var(--safe-t));
+  padding:var(--safe-t) 10px 0;display:flex;align-items:center;gap:8px;
+}
+.page-title{flex:1;text-align:center;font-size:20px;font-weight:900;color:var(--brand-2)}
+.page-body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:8px 12px calc(24px + var(--safe-b))}
+.gal-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.gal-item{position:relative;border-radius:18px;overflow:hidden;background:#fff;box-shadow:var(--shadow);aspect-ratio:3/4}
+.gal-item img{width:100%;height:100%;object-fit:cover;display:block}
+.gal-item:active{transform:scale(.96)}
+.gal-del{
+  position:absolute;right:4px;top:4px;width:34px;height:34px;border-radius:50%;
+  background:rgba(255,255,255,.92);color:#e8433a;font-size:17px;font-weight:900;
+  display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.16);z-index:2;
+}
+.gal-date{position:absolute;left:0;right:0;bottom:0;padding:3px 6px;font-size:10px;color:#fff;background:linear-gradient(0deg,rgba(0,0,0,.45),transparent)}
+.empty{text-align:center;color:var(--ink-soft);font-size:15px;padding:60px 20px;line-height:1.7}
+
+/* 全屏模式 */
+#fsbar{
+  position:fixed;left:8px;right:8px;top:calc(8px + var(--safe-t));
+  display:none;gap:6px;align-items:center;
+  padding:6px;border-radius:22px;
+  background:rgba(255,255,255,.9);backdrop-filter:blur(8px);
+  box-shadow:var(--shadow);z-index:30;
+}
+#fsbar button{
+  flex:1;height:50px;border-radius:16px;background:#f7f3fd;
+  font-size:22px;line-height:1;display:flex;align-items:center;justify-content:center;
+}
+#fsbar button:active{transform:scale(.92)}
+#fsbar button[disabled]{opacity:.32}
+body.fs #topbar,body.fs #toolbar{display:none}
+body.fs #fsbar{display:flex}
+body.fs #stage{margin:0;border-radius:0;box-shadow:none}
+body.fs .panel{bottom:calc(6px + var(--safe-b));z-index:40}
+
+/* Toast */
+#toast{
+  position:fixed;left:50%;bottom:calc(var(--toolbar-h) + var(--safe-b) + 18px);
+  transform:translateX(-50%) translateY(10px);
+  background:rgba(74,50,100,.92);color:#fff;
+  font-size:15px;font-weight:700;padding:11px 20px;border-radius:999px;
+  opacity:0;pointer-events:none;transition:opacity .22s,transform .22s;z-index:80;white-space:nowrap;
+}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* 小屏 */
+@media (max-height:600px){
+  :root{--toolbar-h:64px}
+  .tab .tab-ic{font-size:21px}
+  .tab{font-size:11px}
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- 顶栏 -->
+  <header id="topbar">
+    <button id="btnGallery" class="ic-btn" title="我的作品">🖼️</button>
+    <div id="title">我的画</div>
+    <div class="top-right">
+      <button id="btnUndo" class="ic-btn" title="撤销">↩️</button>
+      <button id="btnRedo" class="ic-btn" title="重做">↪️</button>
+      <button id="btnSave" class="ic-btn" title="保存">💾</button>
+    </div>
+  </header>
+
+  <!-- 画布 -->
+  <main id="stage">
+    <canvas id="draw"></canvas>
+    <canvas id="preview"></canvas>
+    <div id="hint">👆 用手指画一画吧～</div>
+  </main>
+
+  <!-- 底部工具栏 -->
+  <nav id="toolbar">
+    <button class="tab" data-panel="color" id="tabColor">
+      <span class="tab-ic"><span class="dot" id="tabColorDot"></span></span><span>颜色</span>
+    </button>
+    <button class="tab" data-panel="brush" id="tabBrush">
+      <span class="tab-ic" id="tabBrushIc">🖍️</span><span>笔刷</span>
+    </button>
+    <button class="tab" id="tabEraser">
+      <span class="tab-ic">🧽</span><span>橡皮</span>
+    </button>
+    <button class="tab" data-panel="sticker" id="tabSticker">
+      <span class="tab-ic">⭐</span><span>贴纸</span>
+    </button>
+    <button class="tab" data-panel="shape" id="tabShape">
+      <span class="tab-ic">🔷</span><span>图形</span>
+    </button>
+    <button class="tab danger" id="tabClear">
+      <span class="tab-ic">🗑️</span><span>清空</span>
+    </button>
+  </nav>
+</div>
+
+<!-- 面板：颜色 -->
+<div class="panel hidden" id="panel-color">
+  <div class="panel-head"><span>选一个颜色 🎨</span><button class="close-x" data-close>×</button></div>
+  <div class="swatches" id="swatches"></div>
+  <div class="panel-foot">
+    <label class="more-color" for="colorPicker">🎨 更多颜色</label>
+    <input type="color" id="colorPicker" value="#ff5c8a">
+  </div>
+</div>
+
+<!-- 面板：笔刷 -->
+<div class="panel hidden" id="panel-brush">
+  <div class="panel-head"><span>选一支笔 ✏️</span><button class="close-x" data-close>×</button></div>
+  <div class="grid-brush" id="brushGrid"></div>
+  <div class="sub-title">笔粗</div>
+  <div class="grid-size" id="sizeGrid"></div>
+</div>
+
+<!-- 面板：贴纸 -->
+<div class="panel hidden" id="panel-sticker">
+  <div class="panel-head"><span>选一个贴纸 ⭐</span><button class="close-x" data-close>×</button></div>
+  <div class="grid-sticker" id="stickerGrid"></div>
+  <div class="tip">点一下贴纸，再点画布就贴上去啦～<br>一个手指拖它，两个手指可以放大和转动 🔄</div>
+</div>
+
+<!-- 面板：图形 -->
+<div class="panel hidden" id="panel-shape">
+  <div class="panel-head"><span>画个形状 🔷</span><button class="close-x" data-close>×</button></div>
+  <div class="grid-shape" id="shapeGrid"></div>
+  <div class="sub-title">样式</div>
+  <div class="grid-size" id="fillGrid" style="grid-template-columns:repeat(2,1fr)"></div>
+  <div class="tip">在画布上按住手指拖一下，就画出来啦～</div>
+</div>
+
+<!-- 全屏迷你工具条 -->
+<div id="fsbar">
+  <button id="fsExit" title="退出全屏">🔽</button>
+  <button id="fsUndo" title="撤销">↩️</button>
+  <button id="fsRedo" title="重做">↪️</button>
+  <button id="fsColor" title="颜色">🎨</button>
+  <button id="fsEraser" title="橡皮">🧽</button>
+  <button id="fsSave" title="保存">💾</button>
+</div>
+
+<!-- 我的作品页 -->
+<div id="gallery" class="page hidden">
+  <header class="page-head">
+    <button id="galBack" class="ic-btn">⬅️</button>
+    <div class="page-title">我的作品</div>
+    <button id="galClose" class="ic-btn">✖️</button>
+  </header>
+  <div class="page-body">
+    <div id="galEmpty" class="empty">还没有作品哦～<br>画一张，按 💾 保存吧！</div>
+    <div id="galGrid" class="gal-grid"></div>
+  </div>
+</div>
+
+<!-- 通用弹窗 -->
+<div id="modal" class="modal hidden">
+  <div class="card">
+    <div class="card-emoji" id="modalEmoji">🎨</div>
+    <div class="card-title" id="modalTitle">要重新画一张吗？</div>
+    <div class="card-actions">
+      <button class="btn ghost" id="modalCancel">取消</button>
+      <button class="btn primary" id="modalOk">重新画</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+/* =========================================================
+   我的画 · 儿童画画 App
+   纯 HTML + CSS + JS / Canvas2D / 无依赖 / 离线可用
+   结构：① 常量与工具 ② 画布与渲染 ③ 指针交互 ④ 界面逻辑 ⑤ 保存与作品
+   ========================================================= */
+
+/* ---------- ① 常量与工具 ---------- */
+
+// 颜色（黑红橙黄绿青蓝紫粉棕白）
+const COLORS = [
+  { c: "#2b2b2b", n: "黑" }, { c: "#e8433a", n: "红" }, { c: "#ff8a3d", n: "橙" },
+  { c: "#ffd23f", n: "黄" }, { c: "#4cc86b", n: "绿" }, { c: "#22c9c9", n: "青" },
+  { c: "#3b8cff", n: "蓝" }, { c: "#9b5cff", n: "紫" }, { c: "#ff77b0", n: "粉" },
+  { c: "#a9744f", n: "棕" }, { c: "#ffffff", n: "白" }
+];
+
+// 笔刷定义：base 为基准线宽系数，all 为是否在"选笔"面板显示
+const BRUSHES = [
+  { id: "pencil",      emoji: "✏️", name: "铅笔" },
+  { id: "crayon",      emoji: "🖍️", name: "蜡笔" },
+  { id: "marker",      emoji: "🖌️", name: "彩笔" },
+  { id: "highlighter", emoji: "✨", name: "荧光" },
+  { id: "eraser",      emoji: "🧽", name: "橡皮" },
+  { id: "rainbow",     emoji: "🌈", name: "彩虹" },
+  { id: "star",        emoji: "🌟", name: "星星" },
+  { id: "bubble",      emoji: "🫧", name: "泡泡" },
+  { id: "firework",    emoji: "🎆", name: "烟花" }
+];
+
+// 笔粗（CSS 像素）
+const SIZES = [
+  { v: 3,  n: "小",   bar: 5 },
+  { v: 7,  n: "中",   bar: 9 },
+  { v: 13, n: "大",   bar: 15 },
+  { v: 22, n: "超大", bar: 21 }
+];
+
+// 贴纸
+const STICKERS = ["⭐","🌈","❤️","🌸","🦋","🐱","🐶","🐰","🦄","☀️","🌙","🍎","🍓","🍉","🎈","🚗"];
+
+// 图形
+const SHAPES = [
+  { id: "circle",   emoji: "⭕", name: "圆形" },
+  { id: "square",   emoji: "🟦", name: "方形" },
+  { id: "triangle", emoji: "🔺", name: "三角" },
+  { id: "heart",    emoji: "❤️", name: "爱心" },
+  { id: "star",     emoji: "⭐", name: "星形" }
+];
+
+const LS_GALLERY = "kd_gallery_v1";   // 作品列表
+const LS_CURRENT = "kd_current_v1";   // 当前画布（刷新后恢复）
+
+// 全局状态
+const state = {
+  tool: "brush",        // brush | sticker
+  shapeTool: false,     // 是否处于图形工具
+  brush: "crayon",      // 当前笔刷
+  color: "#2b2b2b",
+  size: 7,
+  shape: "circle",
+  shapeFilled: false,
+  sticker: "⭐",
+  items: [],            // 所有绘制对象（矢量，可撤销/重画）
+  history: [[]],        // 历史快照
+  hIndex: 0
+};
+
+// 确定性随机数（同一 seed 必得同一序列，保证撤销重画后图案一致）
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+// #rrggbb → rgba(...)
+function rgba(hex, a) {
+  let h = hex.replace("#", "");
+  if (h.length === 3) h = h.split("").map(x => x + x).join("");
+  const n = parseInt(h, 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
+const $ = id => document.getElementById(id);
+const clamp = (v, a, b) => v < a ? a : (v > b ? b : v);
+
+function todayStr() {
+  const d = new Date();
+  const p = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/* ---------- ② 画布与渲染 ---------- */
+
+const stage = $("stage");
+const drawCanvas = $("draw");     // 主画布（透明底，白色由舞台/导出时填充）
+const previewCanvas = $("preview"); // 预览层（形状、贴纸拖动）
+const dctx = drawCanvas.getContext("2d");
+const pctx = previewCanvas.getContext("2d");
+
+let W = 0, H = 0, DPR = 1;        // 逻辑尺寸（CSS 像素）与像素比
+
+// 适配屏幕 + 处理 devicePixelRatio，保证高清屏线条清晰
+function setupCanvas(force) {
+  const r = stage.getBoundingClientRect();
+  const w = Math.max(1, Math.round(r.width));
+  const h = Math.max(1, Math.round(r.height));
+  const oldW = W, oldH = H;
+  const changed = force || Math.abs(w - W) > 2 || Math.abs(h - H) > 2;
+  DPR = Math.min(window.devicePixelRatio || 1, 3);
+  W = w; H = h;
+
+  for (const cv of [drawCanvas, previewCanvas]) {
+    cv.width = Math.round(w * DPR);
+    cv.height = Math.round(h * DPR);
+    cv.style.width = w + "px";
+    cv.style.height = h + "px";
+    const cx = cv.getContext("2d");
+    cx.setTransform(DPR, 0, 0, DPR, 0, 0); // 之后所有坐标都用 CSS 像素
+  }
+  // 尺寸变了（旋转屏幕等）：把已有内容按比例缩放，避免作品丢失
+  if (changed && oldW > 0 && oldH > 0 && (oldW !== w || oldH !== h)) {
+    rescaleItems(w / oldW, h / oldH);
+  }
+  redraw();
+}
+
+// 按比例缩放所有绘制对象
+function rescaleItems(sx, sy) {
+  const avg = (sx + sy) / 2;
+  for (const it of state.items) {
+    if (it.type === "stroke") {
+      for (const p of it.points) { p.x *= sx; p.y *= sy; }
+      if (it.cum) for (let i = 0; i < it.cum.length; i++) it.cum[i] *= avg;
+      it.size *= avg;
+      it.seed = (it.seed || 1) + 0.5;
+    } else if (it.type === "sticker") {
+      it.x *= sx; it.y *= sy; it.size *= avg;
+    } else if (it.type === "shape") {
+      it.x0 *= sx; it.y0 *= sy; it.x1 *= sx; it.y1 *= sy; it.size *= avg;
+    }
+  }
+}
+
+// 画一条线段
+function lineTo(ctx, p0, p1) {
+  ctx.beginPath();
+  ctx.moveTo(p0.x, p0.y);
+  ctx.lineTo(p1.x, p1.y);
+  ctx.stroke();
+}
+
+// 五角星路径
+function starPath(ctx, cx, cy, r, points, inner, rot) {
+  inner = inner === undefined ? 0.45 : inner;
+  rot = rot === undefined ? -Math.PI / 2 : rot;
+  for (let i = 0; i < points * 2; i++) {
+    const rad = (i % 2 ? r * inner : r);
+    const ang = rot + i * Math.PI / points;
+    const x = cx + Math.cos(ang) * rad, y = cy + Math.sin(ang) * rad;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+}
+
+// 爱心路径
+function heartPath(ctx, cx, cy, w, h) {
+  const s = Math.max(8, Math.min(w, h));
+  ctx.moveTo(cx, cy + s * 0.36);
+  ctx.bezierCurveTo(cx + s * 0.52, cy - s * 0.14, cx + s * 0.26, cy - s * 0.56, cx, cy - s * 0.2);
+  ctx.bezierCurveTo(cx - s * 0.26, cy - s * 0.56, cx - s * 0.52, cy - s * 0.14, cx, cy + s * 0.36);
+  ctx.closePath();
+}
+
+// 绘制"一段"笔迹：points[i-1] → points[i]。每段独立 seed，保证重画完全一致
+function drawSeg(ctx, s, i) {
+  const p0 = s.points[i - 1], p1 = s.points[i];
+  const dx = p1.x - p0.x, dy = p1.y - p0.y;
+  const d = Math.hypot(dx, dy) || 0.0001;
+  const rng = mulberry32(((s.seed || 1) * 7919 + i * 131) | 0);
+  const w = Math.max(1, s.size);
+  const col = s.color;
+
+  ctx.save();
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = "source-over";
+
+  switch (s.brush) {
+    // 橡皮：擦成透明，露出白色底
+    case "eraser": {
+      ctx.globalCompositeOperation = "destination-out";
+      ctx.strokeStyle = "#000";
+      ctx.lineWidth = w * 2.2;
+      lineTo(ctx, p0, p1);
+      break;
+    }
+    // 铅笔：细实线
+    case "pencil": {
+      ctx.strokeStyle = col;
+      ctx.globalAlpha = 0.95;
+      ctx.lineWidth = w * 0.85;
+      lineTo(ctx, p0, p1);
+      break;
+    }
+    // 彩笔：粗实线，圆头
+    case "marker": {
+      ctx.strokeStyle = col;
+      ctx.globalAlpha = 0.92;
+      ctx.lineWidth = w * 1.25;
+      lineTo(ctx, p0, p1);
+      break;
+    }
+    // 荧光笔：很宽的半透明带
+    case "highlighter": {
+      ctx.strokeStyle = col;
+      ctx.globalAlpha = 0.3;
+      ctx.lineWidth = w * 2.6;
+      lineTo(ctx, p0, p1);
+      break;
+    }
+    // 蜡笔：底色 + 颗粒感
+    case "crayon": {
+      const cw = w * 1.35;
+      ctx.strokeStyle = rgba(col, 0.5);
+      ctx.lineWidth = cw;
+      lineTo(ctx, p0, p1);
+      ctx.fillStyle = rgba(col, 0.3);
+      const n = clamp(Math.ceil(d / 2.5), 2, 24);
+      for (let k = 0; k < n; k++) {
+        const t = k / n;
+        const jx = (rng() - 0.5) * cw * 0.95;
+        const jy = (rng() - 0.5) * cw * 0.95;
+        ctx.beginPath();
+        ctx.arc(p0.x + dx * t + jx, p0.y + dy * t + jy, cw * 0.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+    }
+    // 彩虹笔：颜色随累计长度循环
+    case "rainbow": {
+      const dist = s.cum ? s.cum[i] : 0;
+      const hue = (dist * 0.9) % 360;
+      ctx.strokeStyle = `hsl(${hue},92%,56%)`;
+      ctx.lineWidth = w * 1.2;
+      lineTo(ctx, p0, p1);
+      break;
+    }
+    // 星星笔：一路撒小星星
+    case "star": {
+      const n = clamp(Math.round(d / (w * 1.5)), 1, 10);
+      for (let k = 0; k < n; k++) {
+        const t = (k + 0.5) / n;
+        const r = w * (0.7 + rng() * 0.6);
+        ctx.fillStyle = `hsl(${Math.floor(rng() * 360)},88%,62%)`;
+        ctx.beginPath();
+        starPath(ctx, p0.x + dx * t, p0.y + dy * t, r, 5, 0.45, rng() * Math.PI);
+        ctx.fill();
+      }
+      break;
+    }
+    // 泡泡笔：一路冒泡泡
+    case "bubble": {
+      const n = clamp(Math.round(d / (w * 1.1)), 1, 10);
+      for (let k = 0; k < n; k++) {
+        const t = (k + 0.5) / n;
+        const r = w * (0.5 + rng() * 0.75);
+        const cx = p0.x + dx * t + (rng() - 0.5) * w * 0.8;
+        const cy = p0.y + dy * t + (rng() - 0.5) * w * 0.8;
+        ctx.strokeStyle = rgba(col, 0.55);
+        ctx.lineWidth = Math.max(1, w * 0.14);
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = "rgba(255,255,255,.55)";
+        ctx.beginPath(); ctx.arc(cx - r * 0.32, cy - r * 0.34, r * 0.2, 0, Math.PI * 2); ctx.fill();
+      }
+      break;
+    }
+  }
+  ctx.restore();
+}
+
+// 单点（手指点一下没移动）也要留下痕迹
+function drawDot(ctx, s, p) {
+  const tmp = { points: [{ x: p.x - 0.01, y: p.y - 0.01 }, { x: p.x + 0.01, y: p.y + 0.01 }], brush: s.brush, color: s.color, size: s.size, seed: s.seed, cum: [0, 0] };
+  drawSeg(ctx, tmp, 1);
+}
+
+// 烟花：以某点为圆心的爆开效果（确定性随机，重画一致）
+function drawFirework(ctx, it) {
+  const rng = mulberry32(((it.seed || 1) * 104729) | 0);
+  const R = it.size * 3.4;
+  const n = Math.round(22 + rng() * 10);
+  const baseHue = Math.floor(rng() * 360);
+  ctx.save();
+  ctx.lineCap = "round";
+  for (let i = 0; i < n; i++) {
+    const ang = (i / n) * Math.PI * 2 + rng() * 0.12;
+    const len = R * (0.55 + rng() * 0.55);
+    ctx.strokeStyle = `hsl(${(baseHue + i * 12) % 360},90%,58%)`;
+    ctx.lineWidth = Math.max(1.4, it.size * 0.16);
+    ctx.beginPath();
+    ctx.moveTo(it.x + Math.cos(ang) * R * 0.1, it.y + Math.sin(ang) * R * 0.1);
+    ctx.lineTo(it.x + Math.cos(ang) * len, it.y + Math.sin(ang) * len);
+    ctx.stroke();
+    ctx.fillStyle = `hsl(${(baseHue + i * 12 + 40) % 360},92%,66%)`;
+    ctx.beginPath();
+    ctx.arc(it.x + Math.cos(ang) * len, it.y + Math.sin(ang) * len, Math.max(1.5, it.size * 0.2), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = "rgba(255,255,255,.9)";
+  ctx.beginPath(); ctx.arc(it.x, it.y, Math.max(2, it.size * 0.3), 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+// 渲染一个绘制对象
+function renderItem(ctx, it) {
+  if (it.hidden) return;
+  ctx.save();
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = "source-over";
+
+  if (it.type === "stroke") {
+    if (it.brush === "firework") { drawFirework(ctx, it); ctx.restore(); return; }
+    ctx.restore();
+    if (it.points.length === 1) { drawDot(ctx, it, it.points[0]); return; }
+    for (let i = 1; i < it.points.length; i++) drawSeg(ctx, it, i);
+    return;
+  }
+
+  if (it.type === "sticker") {
+    ctx.translate(it.x, it.y);
+    ctx.rotate(it.rot || 0);
+    ctx.font = it.size + 'px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(it.emoji, 0, 0);
+    ctx.restore();
+    return;
+  }
+
+  if (it.type === "shape") {
+    const x0 = it.x0, y0 = it.y0, x1 = it.x1, y1 = it.y1;
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    const w = Math.max(1, Math.abs(x1 - x0)), h = Math.max(1, Math.abs(y1 - y0));
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.strokeStyle = it.color;
+    ctx.fillStyle = it.color;
+    ctx.lineWidth = Math.max(2, it.size * 0.75);
+    ctx.beginPath();
+    if (it.shape === "circle") ctx.ellipse(cx, cy, w / 2, h / 2, 0, 0, Math.PI * 2);
+    else if (it.shape === "square") ctx.rect(Math.min(x0, x1), Math.min(y0, y1), w, h);
+    else if (it.shape === "triangle") {
+      ctx.moveTo(cx, Math.min(y0, y1));
+      ctx.lineTo(Math.max(x0, x1), Math.max(y0, y1));
+      ctx.lineTo(Math.min(x0, x1), Math.max(y0, y1));
+      ctx.closePath();
+    }
+    else if (it.shape === "heart") heartPath(ctx, cx, cy, w, h);
+    else if (it.shape === "star") starPath(ctx, cx, cy, Math.min(w, h) / 2, 5);
+    if (it.filled) { ctx.fill(); ctx.lineWidth = Math.max(1.5, it.size * 0.4); ctx.stroke(); }
+    else ctx.stroke();
+    ctx.restore();
+    return;
+  }
+  ctx.restore();
+}
+
+// 全量重画（撤销 / 重做 / 屏幕变化时调用）
+function redraw() {
+  dctx.save();
+  dctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  dctx.clearRect(0, 0, W, H);
+  dctx.globalAlpha = 1;
+  dctx.globalCompositeOperation = "source-over";
+  for (const it of state.items) renderItem(dctx, it);
+  dctx.restore();
+}
+
+// 清空预览层
+function clearPreview() {
+  pctx.save();
+  pctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  pctx.clearRect(0, 0, W, H);
+  pctx.restore();
+}
+/* ---------- ③ 历史记录与指针交互 ---------- */
+
+const MAX_HISTORY = 60;
+
+// 记录一步历史（每次完成一个动作后调用）
+function pushHistory() {
+  state.history = state.history.slice(0, state.hIndex + 1);
+  state.history.push(state.items.slice());
+  if (state.history.length > MAX_HISTORY) state.history.shift();
+  state.hIndex = state.history.length - 1;
+  updateHistoryButtons();
+  persistCurrent();
+}
+
+function restoreHistory() {
+  state.items = state.history[state.hIndex].slice();
+  redraw();
+  updateHistoryButtons();
+  persistCurrent();
+}
+
+function undo() {
+  if (state.hIndex <= 0) { toast("没有可以撤销的啦"); return; }
+  state.hIndex--;
+  restoreHistory();
+}
+function redo() {
+  if (state.hIndex >= state.history.length - 1) { toast("没有可以重做的啦"); return; }
+  state.hIndex++;
+  restoreHistory();
+}
+function updateHistoryButtons() {
+  const u = $("btnUndo"), r = $("btnRedo");
+  u.disabled = state.hIndex <= 0;
+  r.disabled = state.hIndex >= state.history.length - 1;
+  $("fsUndo").disabled = u.disabled;
+  $("fsRedo").disabled = r.disabled;
+}
+
+// 坐标换算：屏幕坐标 → 画布逻辑坐标
+function pos(e) {
+  const r = drawCanvas.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+
+const pointers = new Map();   // pointerId → {x,y}
+let stroke = null;            // 正在画的笔迹
+let shapeStart = null;        // 正在拖的图形起点
+let dragSticker = null;       // 正在拖的贴纸
+let dragInfo = null;          // 贴纸拖动/缩放/旋转的起始数据
+
+// 手指按下
+function onPointerDown(e) {
+  if (e.pointerType === "mouse" && e.button !== 0) return;
+  // 多点触控：第二根手指只在"贴纸缩放旋转"时参与，避免误画
+  if (pointers.size >= 1 && !dragSticker) return;
+  const p = pos(e);
+  pointers.set(e.pointerId, p);
+  try { drawCanvas.setPointerCapture(e.pointerId); } catch (err) { /* 忽略 */ }
+  hideHint();
+
+  // 已有拖动进行中：第二根手指只参与缩放/旋转，不重新开始动作
+  if (dragSticker && dragInfo) {
+    dragInfo.d0 = 0;
+    dragInfo.second = p;
+    return;
+  }
+
+  // (1) 贴纸模式：点已有贴纸=拖动，点空白=贴一个新的
+  if (state.tool === "sticker") {
+    const hit = [...state.items].reverse().find(it =>
+      it.type === "sticker" && Math.hypot(it.x - p.x, it.y - p.y) < it.size * 0.62);
+    const target = hit || {
+      type: "sticker",
+      emoji: state.sticker,
+      x: p.x, y: p.y,
+      size: clamp(state.size * 9, 44, 180),
+      rot: 0
+    };
+    if (!hit) state.items.push(target);   // 新贴纸入列
+    dragSticker = target;
+    target.hidden = true;                // 拖动期间由预览层显示
+    redraw();
+    clearPreview();
+    renderItem(pctx, target);
+    dragInfo = {
+      pointerId: e.pointerId,
+      ox: p.x - target.x, oy: p.y - target.y,
+      isNew: !hit,
+      second: null,
+      d0: 0, a0: 0, s0: target.size, r0: target.rot || 0,
+      moved: !hit                             // 新贴纸必定记录历史
+    };
+    if (!hit) toast("贴好啦 " + target.emoji + "，可以拖动它");
+    return;
+  }
+
+  // (2) 图形模式
+  if (state.shapeTool) {
+    shapeStart = p;
+    return;
+  }
+
+  // (3) 自由绘画
+  const it = {
+    type: "stroke",
+    brush: state.brush,
+    color: state.color,
+    size: state.size,
+    seed: Math.floor(Math.random() * 1e6) + 1,
+    points: [p],
+    cum: [0]
+  };
+  if (state.brush === "firework") {   // 烟花：点一下直接爆开
+    state.items.push(it);
+    renderItem(dctx, it);
+    pushHistory();
+    stroke = null;
+    return;
+  }
+  stroke = it;
+  state.items.push(it);
+}
+
+// 手指移动
+function onPointerMove(e) {
+  const p = pos(e);
+  const prev = pointers.get(e.pointerId);
+  if (!prev) return;
+  pointers.set(e.pointerId, p);
+
+  // 贴纸：单指拖动 / 双指缩放旋转
+  if (dragSticker && dragInfo) {
+    dragInfo.moved = true;
+    const others = [...pointers.entries()].filter(([id]) => id !== e.pointerId).map(([, q]) => q);
+    const second = others[0];
+    if (second) {
+      // 双指：缩放 + 旋转
+      const dist = Math.hypot(second.x - p.x, second.y - p.y) || 1;
+      const ang = Math.atan2(second.y - p.y, second.x - p.x);
+      const mid = { x: (p.x + second.x) / 2, y: (p.y + second.y) / 2 };
+      if (!dragInfo.d0) { dragInfo.d0 = dist; dragInfo.a0 = ang; dragInfo.s0 = dragSticker.size; dragInfo.r0 = dragSticker.rot || 0; }
+      dragSticker.size = clamp(dragInfo.s0 * (dist / dragInfo.d0), 20, 420);
+      dragSticker.rot = dragInfo.r0 + (ang - dragInfo.a0);
+      dragSticker.x = mid.x;
+      dragSticker.y = mid.y;
+      dragInfo.ox = p.x - dragSticker.x;
+      dragInfo.oy = p.y - dragSticker.y;
+    } else {
+      dragSticker.x = p.x - dragInfo.ox;
+      dragSticker.y = p.y - dragInfo.oy;
+    }
+    clearPreview();
+    renderItem(pctx, dragSticker);
+    return;
+  }
+
+  // 图形：拖动预览
+  if (shapeStart) {
+    const it = {
+      type: "shape", shape: state.shape, color: state.color,
+      size: state.size, filled: state.shapeFilled,
+      x0: shapeStart.x, y0: shapeStart.y, x1: p.x, y1: p.y
+    };
+    clearPreview();
+    renderItem(pctx, it);
+    return;
+  }
+
+  // 自由绘画：追加点 + 只画新增的一段（流畅、不断线）
+  if (!stroke) return;
+  const pts = stroke.points;
+  const last = pts[pts.length - 1];
+  const batch = (e.getCoalescedEvents && e.getCoalescedEvents().length) ? e.getCoalescedEvents() : [e];
+  for (const ev of batch) {
+    const q = pos(ev);
+    const d = Math.hypot(q.x - last.x, q.y - last.y);
+    if (d < 0.7) continue;              // 过滤抖动，减少节点
+    pts.push(q);
+    stroke.cum.push(stroke.cum[stroke.cum.length - 1] + d);
+    drawSeg(dctx, stroke, pts.length - 1);
+    last.x = q.x; last.y = q.y;
+  }
+}
+
+// 手指抬起
+function onPointerUp(e) {
+  pointers.delete(e.pointerId);
+  try { drawCanvas.releasePointerCapture(e.pointerId); } catch (err) { /* 忽略 */ }
+
+  // 双指中的"第二根手指"抬起：重置缩放基准，并让剩下的手指无缝接管拖动
+  if (dragSticker && dragInfo && dragInfo.pointerId !== e.pointerId) {
+    const rem = [...pointers.values()][0];
+    if (rem) { dragInfo.ox = rem.x - dragSticker.x; dragInfo.oy = rem.y - dragSticker.y; }
+    dragInfo.d0 = 0;
+    dragInfo.second = null;
+    return;
+  }
+  // 贴纸落定
+  if (dragSticker && dragInfo && dragInfo.pointerId === e.pointerId) {
+    dragSticker.hidden = false;
+    clearPreview();
+    if (dragInfo.moved) pushHistory(); else { redraw(); }
+    dragSticker = null; dragInfo = null;
+    return;
+  }
+
+  // 图形落定
+  if (shapeStart) {
+    const p = pointers.size ? [...pointers.values()][0] : pos(e);
+    const w = Math.abs(p.x - shapeStart.x), h = Math.abs(p.y - shapeStart.y);
+    clearPreview();
+    if (w > 6 || h > 6) {   // 太小忽略，避免误触画出小点
+      const it = {
+        type: "shape", shape: state.shape, color: state.color,
+        size: state.size, filled: state.shapeFilled,
+        x0: shapeStart.x, y0: shapeStart.y, x1: p.x, y1: p.y
+      };
+      state.items.push(it);
+      renderItem(dctx, it);
+      pushHistory();
+    }
+    shapeStart = null;
+    return;
+  }
+
+  // 笔迹落定
+  if (stroke) {
+    const pts = stroke.points;
+    if (pts.length < 2) drawDot(dctx, stroke, pts[0]);
+    stroke = null;
+    pushHistory();
+  }
+}
+
+// 指针取消 / 移出
+function onPointerCancel(e) {
+  pointers.delete(e.pointerId);
+  if (dragSticker) { dragSticker.hidden = false; dragSticker = null; dragInfo = null; clearPreview(); redraw(); }
+  if (shapeStart) { shapeStart = null; clearPreview(); }
+  if (stroke) {
+    const pts = stroke.points;
+    if (pts.length < 2) drawDot(dctx, stroke, pts[0]);
+    stroke = null;
+    pushHistory();
+  }
+}
+
+drawCanvas.addEventListener("pointerdown", onPointerDown, { passive: false });
+drawCanvas.addEventListener("pointermove", onPointerMove, { passive: false });
+drawCanvas.addEventListener("pointerup", onPointerUp, { passive: false });
+drawCanvas.addEventListener("pointercancel", onPointerCancel, { passive: false });
+drawCanvas.addEventListener("contextmenu", e => e.preventDefault());
+// 兜底：阻止 iOS 上的双指缩放与滚动
+document.addEventListener("gesturestart", e => e.preventDefault());
+document.addEventListener("touchmove", e => {
+  if (e.target.closest && e.target.closest("#stage")) e.preventDefault();
+}, { passive: false });
+/* ---------- ④ 界面构建与交互 ---------- */
+
+// Toast 轻提示
+let toastTimer = null;
+function toast(msg) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 1600);
+}
+
+// 通用确认弹窗
+let modalOkFn = null;
+function confirmDialog(title, okText, emoji, onOk) {
+  $("modalTitle").textContent = title;
+  $("modalOk").textContent = okText;
+  $("modalEmoji").textContent = emoji;
+  modalOkFn = onOk;
+  $("modal").classList.remove("hidden");
+}
+function closeModal() { $("modal").classList.add("hidden"); modalOkFn = null; }
+
+$("modalCancel").addEventListener("click", closeModal);
+$("modalOk").addEventListener("click", () => { const f = modalOkFn; closeModal(); if (f) f(); });
+$("modal").addEventListener("click", e => { if (e.target.id === "modal") closeModal(); });
+
+// —— 颜色面板 ——
+function buildSwatches() {
+  const box = $("swatches");
+  box.innerHTML = "";
+  COLORS.forEach(col => {
+    const b = document.createElement("button");
+    b.className = "swatch";
+    b.style.background = col.c;
+    b.dataset.color = col.c;
+    b.setAttribute("aria-label", col.n);
+    b.addEventListener("click", () => setColor(col.c));
+    box.appendChild(b);
+  });
+  markColor();
+}
+function setColor(c) {
+  state.color = c;
+  state.brush = (state.brush === "eraser") ? "crayon" : state.brush;
+  state.tool = "brush";
+  state.shapeTool = false;
+  markColor();
+  markBrush();
+  markTabs();
+  if (state.brush === "eraser") toast("选好颜色啦");
+  else toast("颜色换好啦 🎨");
+}
+function markColor() {
+  document.querySelectorAll(".swatch").forEach(el => {
+    el.classList.toggle("on", el.dataset.color.toLowerCase() === state.color.toLowerCase());
+  });
+  $("tabColorDot").style.background = state.color;
+}
+
+// —— 笔刷面板 ——
+function buildBrushes() {
+  const box = $("brushGrid");
+  box.innerHTML = "";
+  BRUSHES.forEach(br => {
+    const b = document.createElement("button");
+    b.className = "cell";
+    b.dataset.brush = br.id;
+    b.innerHTML = `<span>${br.emoji}</span><i>${br.name}</i>`;
+    b.addEventListener("click", () => setBrush(br.id));
+    box.appendChild(b);
+  });
+  markBrush();
+}
+function setBrush(id) {
+  state.brush = id;
+  state.tool = "brush";
+  state.shapeTool = false;
+  markBrush();
+  markTabs();
+  const br = BRUSHES.find(x => x.id === id);
+  if (id === "eraser") openPanel("brush");
+  toast(id === "eraser" ? "橡皮擦，擦擦擦 🧽" : "换成" + br.name + "啦");
+}
+function markBrush() {
+  document.querySelectorAll("#brushGrid .cell").forEach(el => {
+    el.classList.toggle("on", el.dataset.brush === state.brush);
+  });
+  const br = BRUSHES.find(x => x.id === state.brush);
+  $("tabBrushIc").textContent = br ? br.emoji : "🖍️";
+  $("tabEraser").classList.toggle("on", state.brush === "eraser" && !state.shapeTool);
+}
+
+// —— 笔粗 ——
+function buildSizes() {
+  const box = $("sizeGrid");
+  box.innerHTML = "";
+  SIZES.forEach(s => {
+    const b = document.createElement("button");
+    b.className = "size-btn";
+    b.dataset.size = s.v;
+    b.innerHTML = `<span class="bar" style="width:${s.bar + 8}px;height:${s.bar}px"></span><span>${s.n}</span>`;
+    b.addEventListener("click", () => { state.size = s.v; markSizes(); toast("笔变" + s.n + "啦"); });
+    box.appendChild(b);
+  });
+  markSizes();
+}
+function markSizes() {
+  document.querySelectorAll("#sizeGrid .size-btn").forEach(el => {
+    el.classList.toggle("on", Number(el.dataset.size) === Number(state.size));
+  });
+}
+
+// —— 贴纸面板 ——
+function buildStickers() {
+  const box = $("stickerGrid");
+  box.innerHTML = "";
+  STICKERS.forEach(em => {
+    const b = document.createElement("button");
+    b.className = "cell";
+    b.dataset.sticker = em;
+    b.innerHTML = `<span>${em}</span>`;
+    b.addEventListener("click", () => {
+      state.sticker = em;
+      state.tool = "sticker";
+      state.shapeTool = false;
+      document.querySelectorAll("#stickerGrid .cell").forEach(el => el.classList.toggle("on", el.dataset.sticker === em));
+      markTabs(); markBrush();
+      toast("点一下画布，贴上 " + em);
+    });
+    box.appendChild(b);
+  });
+}
+
+// —— 图形面板 ——
+function buildShapes() {
+  const box = $("shapeGrid");
+  box.innerHTML = "";
+  SHAPES.forEach(sp => {
+    const b = document.createElement("button");
+    b.className = "cell";
+    b.dataset.shape = sp.id;
+    b.innerHTML = `<span>${sp.emoji}</span><i>${sp.name}</i>`;
+    b.addEventListener("click", () => {
+      state.shape = sp.id;
+      state.shapeTool = true;
+      state.tool = "brush";
+      markShapes(); markTabs(); markBrush();
+      toast("在画布上拖一下画" + sp.name);
+    });
+    box.appendChild(b);
+  });
+  markShapes();
+
+  const fbox = $("fillGrid");
+  fbox.innerHTML = "";
+  [{ v: false, n: "⭕ 空心" }, { v: true, n: "🔵 实心" }].forEach(o => {
+    const b = document.createElement("button");
+    b.className = "size-btn";
+    b.dataset.fill = String(o.v);
+    b.innerHTML = `<span>${o.n}</span>`;
+    b.addEventListener("click", () => { state.shapeFilled = o.v; state.shapeTool = true; state.tool = "brush"; markShapes(); markTabs(); });
+    fbox.appendChild(b);
+  });
+}
+function markShapes() {
+  document.querySelectorAll("#shapeGrid .cell").forEach(el => el.classList.toggle("on", el.dataset.shape === state.shape));
+  document.querySelectorAll("#fillGrid .size-btn").forEach(el => el.classList.toggle("on", String(el.dataset.fill) === String(state.shapeFilled)));
+}
+
+// —— 面板开关 ——
+const PANELS = ["color", "brush", "sticker", "shape"];
+function openPanel(name) {
+  PANELS.forEach(p => $("panel-" + p).classList.toggle("hidden", p !== name));
+  markTabs(name);
+}
+function closePanels() {
+  PANELS.forEach(p => $("panel-" + p).classList.add("hidden"));
+  markTabs(null);
+}
+function markTabs(active) {
+  const cur = active === undefined ? null : active;
+  $("tabColor").classList.toggle("on", cur === "color");
+  $("tabBrush").classList.toggle("on", cur === "brush" || (state.tool === "brush" && !state.shapeTool && state.brush !== "eraser"));
+  $("tabSticker").classList.toggle("on", cur === "sticker" || state.tool === "sticker");
+  $("tabShape").classList.toggle("on", cur === "shape" || state.shapeTool);
+}
+
+// 底部工具栏点击
+document.querySelectorAll("#toolbar .tab").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const panel = btn.dataset.panel;
+    if (panel) {
+      const isOpen = !$("panel-" + panel).classList.contains("hidden");
+      if (isOpen) { closePanels(); }
+      else {
+        openPanel(panel);
+        if (panel === "sticker") state.tool = "sticker", state.shapeTool = false;
+        else if (panel === "shape") state.shapeTool = true, state.tool = "brush";
+        else { state.tool = "brush"; state.shapeTool = false; }
+        markTabs(panel);
+      }
+      return;
+    }
+    if (btn.id === "tabEraser") {
+      closePanels();
+      if (state.brush === "eraser" && !state.shapeTool) setBrush("crayon");
+      else setBrush("eraser");
+      return;
+    }
+    if (btn.id === "tabClear") { askClear(); return; }
+  });
+});
+
+// 关闭面板的小 ×
+document.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", closePanels));
+
+// 更多颜色
+$("colorPicker").addEventListener("input", e => {
+  state.color = e.target.value;
+  markColor();
+});
+$("colorPicker").addEventListener("change", () => {
+  state.brush = (state.brush === "eraser") ? "crayon" : state.brush;
+  state.tool = "brush"; state.shapeTool = false;
+  markBrush(); markTabs();
+  toast("颜色换好啦 🎨");
+});
+
+// 撤销 / 重做 / 保存
+$("btnUndo").addEventListener("click", undo);
+$("btnRedo").addEventListener("click", redo);
+$("fsUndo").addEventListener("click", undo);
+$("fsRedo").addEventListener("click", redo);
+$("btnSave").addEventListener("click", savePng);
+$("fsSave").addEventListener("click", savePng);
+
+// 清空（带确认）
+function askClear() {
+  closePanels();
+  confirmDialog("要重新画一张吗？", "重新画", "🎨", () => {
+    state.items = [];
+    state.history = [[]];
+    state.hIndex = 0;
+    redraw();
+    updateHistoryButtons();
+    persistCurrent();
+    $("hint").style.display = "";
+    $("hint").style.opacity = "1";
+    $("hint").textContent = "👆 用手指画一画吧～";
+    toast("画布干干净净啦 ✨");
+  });
+}
+
+// 首次画画时隐藏提示
+function hideHint() {
+  const h = $("hint");
+  if (h.style.opacity !== "0") { h.style.opacity = "0"; setTimeout(() => { if (h.style.opacity === "0") h.style.display = "none"; }, 520); }
+}
+/* ---------- ⑤ 保存作品 / 我的作品 / 全屏 / 初始化 ---------- */
+
+// 生成导出用的画布（白底 + 内容），返回 canvas
+function composeCanvas(maxWidth) {
+  const scale = maxWidth ? Math.min(1, maxWidth / W) : 1;
+  const cv = document.createElement("canvas");
+  cv.width = Math.max(1, Math.round(W * DPR * scale));
+  cv.height = Math.max(1, Math.round(H * DPR * scale));
+  const cx = cv.getContext("2d");
+  cx.fillStyle = "#ffffff";             // 背景白色
+  cx.fillRect(0, 0, cv.width, cv.height);
+  cx.drawImage(drawCanvas, 0, 0, cv.width, cv.height);
+  return cv;
+}
+
+// 保存：导出 PNG → 触发下载 → 存入"我的作品"
+function savePng() {
+  closePanels();
+  if (!state.items.length) { toast("先画点什么再保存吧 😊"); return; }
+  let url = "";
+  try {
+    url = composeCanvas(null).toDataURL("image/png");
+  } catch (err) {
+    toast("保存失败，请再试一次");
+    return;
+  }
+  // 触发下载（老版本 iOS 不支持 download 时，改为打开图片让用户长按保存）
+  const name = `我的画_${todayStr()}.png`;
+  try {
+    const a = document.createElement("a");
+    a.href = url;
+    a.rel = "noopener";
+    if ("download" in a) {
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => a.remove(), 500);
+    } else {
+      const w = window.open(url, "_blank");
+      if (!w) toast("长按图片可以保存到相册哦");
+    }
+  } catch (err) { /* 少数浏览器禁止下载，作品已存进"我的作品" */ }
+
+  // 存进作品列表（缩略图 + 矢量数据）
+  const thumb = composeCanvas(360).toDataURL("image/jpeg", 0.72);
+  saveToGallery(thumb);
+  toast("保存好啦 💾 " + name);
+}
+
+function readGallery() {
+  try { return JSON.parse(localStorage.getItem(LS_GALLERY) || "[]"); } catch (e) { return []; }
+}
+function writeGallery(list) {
+  try { localStorage.setItem(LS_GALLERY, JSON.stringify(list)); return true; }
+  catch (e) { return false; }
+}
+
+function saveToGallery(thumb) {
+  const list = readGallery();
+  const item = {
+    id: "d" + Date.now(),
+    ts: Date.now(),
+    date: todayStr(),
+    thumb: thumb,
+    items: JSON.stringify(state.items)
+  };
+  list.unshift(item);
+  // 最多保留 24 张，超了删最旧的
+  while (list.length > 24) list.pop();
+  // 存储超限时逐张丢弃最旧的再试
+  let guard = 0;
+  while (!writeGallery(list) && list.length > 1 && guard++ < 30) list.pop();
+  renderGallery();
+}
+
+function renderGallery() {
+  const list = readGallery();
+  const grid = $("galGrid");
+  grid.innerHTML = "";
+  $("galEmpty").classList.toggle("hidden", list.length > 0);
+  list.forEach(it => {
+    const div = document.createElement("div");
+    div.className = "gal-item";
+    const img = document.createElement("img");
+    img.src = it.thumb;
+    img.alt = "我的画";
+    const del = document.createElement("button");
+    del.className = "gal-del";
+    del.textContent = "✕";
+    del.addEventListener("click", ev => {
+      ev.stopPropagation();
+      confirmDialog("要删掉这张画吗？", "删掉", "🗑️", () => {
+        const l = readGallery().filter(x => x.id !== it.id);
+        writeGallery(l);
+        renderGallery();
+        toast("删掉啦");
+      });
+    });
+    const date = document.createElement("div");
+    date.className = "gal-date";
+    date.textContent = it.date || "";
+    div.appendChild(img);
+    div.appendChild(date);
+    div.appendChild(del);
+    div.addEventListener("click", () => openArtwork(it));
+    grid.appendChild(div);
+  });
+}
+
+// 打开作品继续编辑
+function openArtwork(it) {
+  let items = [];
+  try { items = JSON.parse(it.items || "[]"); } catch (e) { items = []; }
+  if (!items.length) { toast("这张画只能看，不能再改啦"); return; }
+  confirmDialog("要继续画这张吗？", "继续画", "🖌️", () => {
+    state.items = items;
+    state.history = [items.slice()];
+    state.hIndex = 0;
+    redraw();
+    updateHistoryButtons();
+    persistCurrent();
+    hideHint();
+    closeGallery();
+    toast("继续画吧 ✨");
+  });
+}
+
+function openGallery() { renderGallery(); $("gallery").classList.remove("hidden"); }
+function closeGallery() { $("gallery").classList.add("hidden"); }
+$("btnGallery").addEventListener("click", openGallery);
+$("galBack").addEventListener("click", closeGallery);
+$("galClose").addEventListener("click", closeGallery);
+
+// —— 全屏模式 ——
+let fsOn = false;
+function setFs(on) {
+  fsOn = on;
+  document.body.classList.toggle("fs", on);
+  setTimeout(() => setupCanvas(true), 120);
+  if (on) {
+    const el = document.documentElement;
+    try {
+      if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+      else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+    } catch (e) { /* iOS 不支持也仍进入沉浸模式 */ }
+    toast("全屏画画模式 ⭐");
+  } else {
+    try {
+      if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
+      else if (document.webkitFullscreenElement && document.webkitExitFullscreen) document.webkitExitFullscreen();
+    } catch (e) { /* 忽略 */ }
+    toast("退出全屏啦");
+  }
+}
+// 双击舞台进入全屏不方便（会误触），改为长按画布空白？不合适——用工具条上的按钮
+// 说明：进入全屏的入口放在"图形/颜色"面板以外，避免干扰画画，这里用标题双击 + 提示按钮
+$("title").addEventListener("dblclick", () => setFs(!fsOn));
+$("fsExit").addEventListener("click", () => setFs(false));
+$("fsColor").addEventListener("click", () => {
+  const isOpen = !$("panel-color").classList.contains("hidden");
+  if (isOpen) closePanels(); else openPanel("color");
+});
+$("fsEraser").addEventListener("click", () => { closePanels(); if (state.brush === "eraser") setBrush("crayon"); else setBrush("eraser"); });
+document.addEventListener("fullscreenchange", () => {
+  if (!document.fullscreenElement && fsOn) setFs(false);
+});
+
+// —— 作品持久化：当前画布 ——
+let persistTimer = null;
+// 立即写入（离开页面 / 切到后台时调用，避免丢画）
+function writeCurrentNow() {
+  clearTimeout(persistTimer);
+  try {
+    const data = JSON.stringify(state.items);
+    if (data.length < 900000) localStorage.setItem(LS_CURRENT, data);
+  } catch (e) { /* 存储满则忽略 */ }
+}
+// 延迟写入（连续画画时避免频繁操作 localStorage）
+function persistCurrent() {
+  clearTimeout(persistTimer);
+  persistTimer = setTimeout(writeCurrentNow, 600);
+}
+window.addEventListener("pagehide", writeCurrentNow);
+window.addEventListener("beforeunload", writeCurrentNow);
+document.addEventListener("visibilitychange", () => { if (document.hidden) writeCurrentNow(); });
+function restoreCurrent() {
+  try {
+    const raw = localStorage.getItem(LS_CURRENT);
+    if (!raw) return false;
+    const items = JSON.parse(raw);
+    if (!Array.isArray(items) || !items.length) return false;
+    state.items = items;
+    state.history = [items.slice()];
+    state.hIndex = 0;
+    return true;
+  } catch (e) { return false; }
+}
+
+// —— 屏幕尺寸变化（旋转 / 键盘弹出） ——
+let resizeTimer = null;
+function onResize() {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => setupCanvas(false), 150);
+}
+window.addEventListener("resize", onResize);
+window.addEventListener("orientationchange", () => setTimeout(onResize, 260));
+if (window.visualViewport) window.visualViewport.addEventListener("resize", onResize);
+
+// —— 初始化 ——
+function init() {
+  buildSwatches();
+  buildBrushes();
+  buildSizes();
+  buildStickers();
+  buildShapes();
+
+  // 默认：蜡笔 + 黑色 + 中号
+  state.brush = "crayon";
+  state.color = "#2b2b2b";
+  state.size = 7;
+  markColor(); markBrush(); markSizes(); markTabs(null);
+
+  const restored = restoreCurrent();
+  setupCanvas(true);
+  if (restored) {
+    redraw();
+    hideHint();
+  } else {
+    redraw();
+  }
+  updateHistoryButtons();
+  renderGallery();
+
+  // 进入全屏的入口提示（长按标题 0.6 秒）
+  let pressTimer = null;
+  $("title").addEventListener("pointerdown", () => { pressTimer = setTimeout(() => setFs(true), 600); });
+  ["pointerup", "pointerleave", "pointercancel"].forEach(ev =>
+    $("title").addEventListener(ev, () => clearTimeout(pressTimer)));
+  $("title").title = "长按进入全屏画画模式";
+}
+
+// 防止页面被拖动/缩放（不影响上面的画布事件）
+document.addEventListener("dblclick", e => e.preventDefault(), { passive: false });
+document.addEventListener("touchstart", e => {
+  if (e.touches.length > 1 && e.target.closest && e.target.closest("#stage")) e.preventDefault();
+}, { passive: false });
+
+init();
+
+// 注册离线缓存：首次打开成功后，即使断网也能继续进入画板。
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./service-worker.js", { scope: "./" })
+      .catch(err => console.warn("离线功能暂时不可用：", err));
+  });
+}
+</script>
+</body>
+</html>
