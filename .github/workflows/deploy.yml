@@ -1,0 +1,44 @@
+# 每次 push 到 main 分支，自动把网站部署到 Cloudflare Pages（项目：kids-drawing）。
+# 部署后线上地址仍然是 https://kids-drawing.pages.dev —— 网址不变，手机主屏幕上的图标照用。
+#
+# 使用前需要在 GitHub 仓库里配置两个 Secret：
+#   Settings → Secrets and variables → Actions → New repository secret
+#     CLOUDFLARE_ACCOUNT_ID = Cloudflare 账号 ID
+#     CLOUDFLARE_API_TOKEN  = Cloudflare API Token（权限：Account / Cloudflare Pages / Edit）
+# 两个 Secret 缺任何一个，这个工作流都会失败。
+
+name: 部署到 Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # 也支持在 GitHub 的 Actions 页面手动点一下触发
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    name: 部署
+    steps:
+      - name: 取出代码
+        uses: actions/checkout@v6
+
+      # 每次部署都把离线缓存版本号刷成本次提交号。
+      # 原因：Service Worker 只有在它自己文件内容发生变化时才会重新安装、重新预缓存页面；
+      # 不刷版本号的话，手机联网打开看到的是新版、一断网又变回旧版，很难排查。
+      # 这一步只改"将要上传的那份文件"，仓库里的 service-worker.js 保持原样不动。
+      - name: 刷新离线缓存版本号
+        run: |
+          V=$(git rev-parse --short=7 HEAD)
+          sed -i "s/kids-drawing-pwa-v[0-9][0-9]*/kids-drawing-pwa-$V/" service-worker.js
+          grep -n 'CACHE_NAME' service-worker.js
+
+      - name: 上传到 Cloudflare Pages
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy . --project-name=kids-drawing --branch=main --commit-dirty=true
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
