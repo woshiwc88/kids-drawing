@@ -406,7 +406,7 @@ body.fs .panel{bottom:calc(6px + var(--safe-b));z-index:40}
 <div class="panel hidden" id="panel-sticker">
   <div class="panel-head"><span>选一个贴纸 ⭐</span><button class="close-x" data-close>×</button></div>
   <div class="grid-sticker" id="stickerGrid"></div>
-  <div class="tip">点一下贴纸，再点画布就贴上去啦～<br>一个手指拖它，两个手指可以放大和转动</div>
+  <div class="tip">点一下贴纸，再点画布就贴上去啦～<br>贴好之后不管拿着什么笔，按住它都能拖<br>一个手指拖，两个手指放大和转动</div>
 </div>
 
 <!-- 面板：图形 -->
@@ -1160,6 +1160,114 @@ let shapeStart = null;        // 正在拖的图形起点
 let dragSticker = null;       // 正在拖的贴纸
 let dragInfo = null;          // 贴纸拖动/缩放/旋转的起始数据
 
+/* ===== 贴纸操作 =====
+   设计要点：
+   1) 不论当前用的是哪个工具，手指按在贴纸上就是「抓起来移动」——
+      小朋友画到一半想挪贴纸，不用先切回贴纸面板。
+   2) 双指缩放/旋转以「第二根手指落下那一刻」为基准，全程不跳；
+      中途松开一根手指，剩下的无缝接管。
+   3) 移动渲染用 requestAnimationFrame 合并，避免高刷屏重复绘制。
+   4) 松手时把贴纸收在画布范围内，保证下一次一定还抓得到。 */
+const GRAB_MIN = 18;          // 最小抓取半径（小朋友手指没那么准）
+const MOVE_EPS = 4;           // 小于这个位移不算"移动过"，不写历史，避免垃圾记录
+let stickerRaf = 0;           // rAF 句柄
+let stickerTipShown = false;  // 贴第一张贴纸时才提示
+
+// 找出手指下方的贴纸：最上面的优先；做了反旋转，转过的贴纸也点得准
+function hitSticker(p) {
+  for (let i = state.items.length - 1; i >= 0; i--) {
+    const it = state.items[i];
+    if (it.type !== "sticker") continue;
+    const dx = p.x - it.x, dy = p.y - it.y;
+    const rot = it.rot || 0;
+    const cs = Math.cos(-rot), sn = Math.sin(-rot);
+    const lx = dx * cs - dy * sn, ly = dx * sn + dy * cs;   // 反旋转到贴纸自身坐标
+    const loose = (state.tool === "sticker");               // 贴纸模式下判定放宽
+    const ry = Math.max(it.size * (loose ? 0.62 : 0.46), GRAB_MIN);
+    const rx = ry * 1.25;                                   // 自绘小马横向更长，命中框跟着放宽
+    if ((lx * lx) / (rx * rx) + (ly * ly) / (ry * ry) <= 1) return it;
+  }
+  return null;
+}
+
+// 把正在拖的贴纸画到预览层：略微抬起 + 柔光圈，让小朋友看到"抓起来了"
+function paintStickerPreview(it) {
+  clearPreview();
+  pctx.save();
+  pctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  pctx.beginPath();
+  pctx.arc(it.x, it.y, it.size * 0.66, 0, Math.PI * 2);
+  pctx.fillStyle = "rgba(255,255,255,.45)";
+  pctx.fill();
+  pctx.setLineDash([7, 6]);
+  pctx.strokeStyle = "rgba(150,120,200,.55)";
+  pctx.lineWidth = 1.6;
+  pctx.stroke();
+  pctx.restore();
+  // 渲染时临时放开 hidden（renderItem 会跳过隐藏对象），画完还原
+  const real = it.size, hid = it.hidden;
+  it.size = real * 1.06;      // 抬起来一点点
+  it.hidden = false;
+  renderItem(pctx, it);
+  it.hidden = hid;
+  it.size = real;
+}
+
+// 合并渲染：一帧最多画一次，高刷屏上也不会画多余的东西
+function scheduleStickerPaint() {
+  if (stickerRaf) return;
+  stickerRaf = requestAnimationFrame(() => {
+    stickerRaf = 0;
+    if (dragSticker) paintStickerPreview(dragSticker);
+  });
+}
+
+// 开始拖动某个贴纸
+function beginStickerDrag(it, p, pointerId, isNew) {
+  it.hidden = true;
+  redraw();                   // 从主画布撤下来，改由预览层跟着手指走
+  paintStickerPreview(it);
+  dragSticker = it;
+  dragInfo = {
+    pointerId,
+    isNew,
+    ox: p.x - it.x, oy: p.y - it.y,      // 单指：保持手指与贴纸的相对位置
+    mid0: null, x0: 0, y0: 0,            // 双指：基准中点 / 基准位置
+    d0: 0, a0: 0, s0: it.size, r0: it.rot || 0,
+    dist: 0,                              // 累计位移
+    moved: !!isNew                        // 新贴的一定记历史
+  };
+}
+
+// 主手指松开但还有别的手指按着：换它接管，位置不跳
+function handOverDrag() {
+  if (!dragSticker || !dragInfo) return;
+  const id = [...pointers.keys()][0];
+  const q = [...pointers.values()][0];
+  if (id === undefined || !q) { settleStickerDrag(); return; }
+  dragInfo.pointerId = id;
+  dragInfo.ox = q.x - dragSticker.x;
+  dragInfo.oy = q.y - dragSticker.y;
+  dragInfo.d0 = 0;
+}
+
+// 松手落定：收在画布范围内
+function settleStickerDrag() {
+  if (!dragSticker) return;
+  const it = dragSticker;
+  const pad = it.size * 0.1;
+  it.x = clamp(it.x, -pad, W + pad);
+  it.y = clamp(it.y, -pad, H + pad);
+  it.hidden = false;
+  clearPreview();
+  // 必须重画：贴纸在拖动开始时已从主画布撤下，这里要把它画回新位置。
+  // （少了这一步就会出现"拖完松手贴纸不见了"）
+  redraw();
+  if (dragInfo && dragInfo.moved) pushHistory();   // 只是点了一下没动，不写历史
+  dragSticker = null;
+  dragInfo = null;
+}
+
 // 手指按下
 function onPointerDown(e) {
   if (e.pointerType === "mouse" && e.button !== 0) return;
@@ -1170,39 +1278,44 @@ function onPointerDown(e) {
   try { drawCanvas.setPointerCapture(e.pointerId); } catch (err) { /* 忽略 */ }
   hideHint();
 
-  // 已有拖动进行中：第二根手指只参与缩放/旋转，不重新开始动作
+  // 已有拖动进行中：第二根手指只参与缩放/旋转，不重新开始动作。
+  // 必须在这里就把基准算好 —— 放到第一次 move 再取，取到的是"已经拉开之后"的距离，
+  // 缩放就会失效（表现为双指怎么拉贴纸都不变大）。
   if (dragSticker && dragInfo) {
-    dragInfo.d0 = 0;
-    dragInfo.second = p;
+    const main = pointers.get(dragInfo.pointerId);
+    if (main) {
+      dragInfo.d0 = Math.hypot(p.x - main.x, p.y - main.y) || 1;
+      dragInfo.a0 = Math.atan2(p.y - main.y, p.x - main.x);
+      dragInfo.mid0 = { x: (p.x + main.x) / 2, y: (p.y + main.y) / 2 };
+      dragInfo.s0 = dragSticker.size;
+      dragInfo.r0 = dragSticker.rot || 0;
+      dragInfo.x0 = dragSticker.x;
+      dragInfo.y0 = dragSticker.y;
+    } else {
+      dragInfo.d0 = 0;
+    }
     return;
   }
 
-  // (1) 贴纸模式：点已有贴纸=拖动，点空白=贴一个新的
+  // (1) 贴纸：无论现在拿着什么工具，按在贴纸上就是抓起来移动
+  const grabbed = hitSticker(p);
+  if (grabbed) {
+    beginStickerDrag(grabbed, p, e.pointerId, false);
+    return;
+  }
+
+  // (2) 贴纸模式下点空白 = 贴一个新的，并且立刻就能拖走
   if (state.tool === "sticker") {
-    const hit = [...state.items].reverse().find(it =>
-      it.type === "sticker" && Math.hypot(it.x - p.x, it.y - p.y) < it.size * 0.62);
-    const target = hit || {
+    const target = {
       type: "sticker",
       emoji: state.sticker,
       x: p.x, y: p.y,
       size: clamp(state.size * 9, 44, 180),
       rot: 0
     };
-    if (!hit) state.items.push(target);   // 新贴纸入列
-    dragSticker = target;
-    target.hidden = true;                // 拖动期间由预览层显示
-    redraw();
-    clearPreview();
-    renderItem(pctx, target);
-    dragInfo = {
-      pointerId: e.pointerId,
-      ox: p.x - target.x, oy: p.y - target.y,
-      isNew: !hit,
-      second: null,
-      d0: 0, a0: 0, s0: target.size, r0: target.rot || 0,
-      moved: !hit                             // 新贴纸必定记录历史
-    };
-    if (!hit) toast("贴好啦 " + target.emoji + "，可以拖动它");
+    state.items.push(target);
+    beginStickerDrag(target, p, e.pointerId, true);
+    if (!stickerTipShown) { stickerTipShown = true; toast("贴好啦，按住就能拖走～"); }
     return;
   }
 
@@ -1240,29 +1353,41 @@ function onPointerMove(e) {
   if (!prev) return;
   pointers.set(e.pointerId, p);
 
-  // 贴纸：单指拖动 / 双指缩放旋转
+  // 贴纸：单指移动 / 双指放大·转动
   if (dragSticker && dragInfo) {
-    dragInfo.moved = true;
+    const it = dragSticker;
     const others = [...pointers.entries()].filter(([id]) => id !== e.pointerId).map(([, q]) => q);
-    const second = others[0];
-    if (second) {
-      // 双指：缩放 + 旋转
-      const dist = Math.hypot(second.x - p.x, second.y - p.y) || 1;
-      const ang = Math.atan2(second.y - p.y, second.x - p.x);
-      const mid = { x: (p.x + second.x) / 2, y: (p.y + second.y) / 2 };
-      if (!dragInfo.d0) { dragInfo.d0 = dist; dragInfo.a0 = ang; dragInfo.s0 = dragSticker.size; dragInfo.r0 = dragSticker.rot || 0; }
-      dragSticker.size = clamp(dragInfo.s0 * (dist / dragInfo.d0), 20, 420);
-      dragSticker.rot = dragInfo.r0 + (ang - dragInfo.a0);
-      dragSticker.x = mid.x;
-      dragSticker.y = mid.y;
-      dragInfo.ox = p.x - dragSticker.x;
-      dragInfo.oy = p.y - dragSticker.y;
+    const s2 = others[0];
+    if (s2) {
+      // 双指：以「第二根手指落下的那一刻」为基准，缩放和转动都不会跳
+      const dist = Math.hypot(s2.x - p.x, s2.y - p.y) || 1;
+      // 角度参考系要和「第二指按下那一刻」保持一致（同为 自己-对方），
+      // 否则旋转方向会反过来：双指顺时针转，贴纸逆时针转
+      const ang = Math.atan2(p.y - s2.y, p.x - s2.x);
+      const mid = { x: (p.x + s2.x) / 2, y: (p.y + s2.y) / 2 };
+      if (!dragInfo.d0) {
+        dragInfo.d0 = dist;
+        dragInfo.a0 = ang;
+        dragInfo.s0 = it.size;
+        dragInfo.r0 = it.rot || 0;
+        dragInfo.mid0 = mid;
+        dragInfo.x0 = it.x;
+        dragInfo.y0 = it.y;
+      }
+      it.size = clamp(dragInfo.s0 * (dist / dragInfo.d0), 20, 420);
+      it.rot = dragInfo.r0 + (ang - dragInfo.a0);
+      it.x = dragInfo.x0 + (mid.x - dragInfo.mid0.x);
+      it.y = dragInfo.y0 + (mid.y - dragInfo.mid0.y);
+      dragInfo.ox = p.x - it.x;   // 为「松开一根手指继续拖」做准备
+      dragInfo.oy = p.y - it.y;
+      dragInfo.dist = MOVE_EPS + 1;   // 用了双指，算作有效改动
     } else {
-      dragSticker.x = p.x - dragInfo.ox;
-      dragSticker.y = p.y - dragInfo.oy;
+      const nx = p.x - dragInfo.ox, ny = p.y - dragInfo.oy;
+      dragInfo.dist += Math.hypot(nx - it.x, ny - it.y);
+      it.x = nx; it.y = ny;
     }
-    clearPreview();
-    renderItem(pctx, dragSticker);
+    if (dragInfo.dist > MOVE_EPS) dragInfo.moved = true;
+    scheduleStickerPaint();
     return;
   }
 
@@ -1299,20 +1424,11 @@ function onPointerUp(e) {
   pointers.delete(e.pointerId);
   try { drawCanvas.releasePointerCapture(e.pointerId); } catch (err) { /* 忽略 */ }
 
-  // 双指中的"第二根手指"抬起：重置缩放基准，并让剩下的手指无缝接管拖动
-  if (dragSticker && dragInfo && dragInfo.pointerId !== e.pointerId) {
-    const rem = [...pointers.values()][0];
-    if (rem) { dragInfo.ox = rem.x - dragSticker.x; dragInfo.oy = rem.y - dragSticker.y; }
-    dragInfo.d0 = 0;
-    dragInfo.second = null;
-    return;
-  }
+  // 还有别的手指按着 → 换它接管，拖动继续，位置不跳
+  if (dragSticker && dragInfo && pointers.size > 0) { handOverDrag(); return; }
   // 贴纸落定
-  if (dragSticker && dragInfo && dragInfo.pointerId === e.pointerId) {
-    dragSticker.hidden = false;
-    clearPreview();
-    if (dragInfo.moved) pushHistory(); else { redraw(); }
-    dragSticker = null; dragInfo = null;
+  if (dragSticker && dragInfo) {
+    settleStickerDrag();
     return;
   }
 
@@ -1347,7 +1463,9 @@ function onPointerUp(e) {
 // 指针取消 / 移出
 function onPointerCancel(e) {
   pointers.delete(e.pointerId);
-  if (dragSticker) { dragSticker.hidden = false; dragSticker = null; dragInfo = null; clearPreview(); redraw(); }
+  if (dragSticker) {
+    if (pointers.size > 0) handOverDrag(); else settleStickerDrag();
+  }
   if (shapeStart) { shapeStart = null; clearPreview(); }
   if (stroke) {
     const pts = stroke.points;
