@@ -7,11 +7,11 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#fff7ee">
-<meta name="description" content="适合小朋友的离线画画小应用">
+<meta name="description" content="豆豆的画板 · 适合小朋友的离线画画小应用">
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="./icons/icon-192.png">
-<title>我的画 · 儿童画画</title>
+<title>豆豆的画板</title>
 <style>
 /* ===== 设计变量 ===== */
 :root{
@@ -44,6 +44,19 @@ body{
 }
 button{font-family:inherit;color:inherit;border:none;background:none;padding:0;cursor:pointer}
 .hidden{display:none !important}
+
+/* ===== 内联 SVG 图标：统一圆头线条风格，颜色跟随所在按钮的文字色 ===== */
+.ic{
+  width:26px;height:26px;flex:0 0 auto;display:block;
+  fill:none;stroke:currentColor;stroke-width:1.9;
+  stroke-linecap:round;stroke-linejoin:round;
+}
+.ic-btn .ic{width:25px;height:25px}
+#fsbar button .ic{width:24px;height:24px}
+@media (max-height:600px){
+  .ic{width:23px;height:23px}
+  .ic-btn .ic{width:22px;height:22px}
+}
 
 /* ===== 整体布局 ===== */
 #app{position:absolute;inset:0;display:flex;flex-direction:column;height:100%}
@@ -115,13 +128,14 @@ button{font-family:inherit;color:inherit;border:none;background:none;padding:0;c
   border-radius:18px;margin:6px 3px;transition:transform .1s,background .15s;
 }
 .tab:active{transform:scale(.94)}
-.tab .tab-ic{font-size:24px;line-height:1}
+.tab .tab-ic{position:relative;display:flex;align-items:center;justify-content:center;height:26px;font-size:24px;line-height:1}
 .tab.on{background:#f4efff;color:var(--brand-2)}
 .tab.danger.on{background:#ffefef;color:#e8433a}
-/* 颜色按钮上的当前色点 */
+/* 颜色按钮右下角的「当前色」小圆点 */
 .dot{
-  display:inline-block;width:22px;height:22px;border-radius:50%;
-  box-shadow:inset 0 0 0 2px #fff,0 0 0 2px #e6ddf2;
+  position:absolute;right:-7px;bottom:-4px;
+  width:13px;height:13px;border-radius:50%;
+  box-shadow:0 0 0 2px #fff,0 0 0 3px rgba(140,120,170,.22);
 }
 
 /* 弹出面板 */
@@ -172,13 +186,15 @@ button{font-family:inherit;color:inherit;border:none;background:none;padding:0;c
 /* 笔刷 / 尺寸 / 贴纸 / 图形 网格 */
 .grid-brush{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
 .grid-sticker{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
-.grid-shape{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.grid-shape{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
 .cell{
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
   min-height:64px;border-radius:18px;background:#f8f5fd;
   font-size:26px;line-height:1;transition:transform .1s,box-shadow .15s;
 }
 .cell i{font-style:normal;font-size:11px;font-weight:700;color:var(--ink-soft)}
+.stk-img{width:36px;height:36px;display:block;pointer-events:none}
+.cell .ic{width:30px;height:30px}
 .cell:active{transform:scale(.93)}
 .cell.on{background:#f1eaff;box-shadow:0 0 0 3px #cabaff inset}
 .cell.on i{color:var(--brand-2)}
@@ -271,15 +287,70 @@ body.fs .panel{bottom:calc(6px + var(--safe-b));z-index:40}
 </head>
 <body>
 
+<!-- ===== 内联 SVG 图标库（全部自绘，零外部依赖，断网可用） ===== -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
+  <symbol id="i-palette" viewBox="0 0 24 24">
+    <path d="M12 21a9 9 0 1 1 9-9c0 1.66-1.34 3-3 3h-1.6a2.4 2.4 0 0 0-1.7 4.1A2.4 2.4 0 0 1 12 21Z"/>
+    <circle cx="7.8" cy="12.4" r="1.1"/><circle cx="9.9" cy="8.3" r="1.1"/><circle cx="14.4" cy="7.6" r="1.1"/>
+  </symbol>
+  <symbol id="i-brush" viewBox="0 0 24 24">
+    <path d="M16.9 3.4 20.6 7.1a1.5 1.5 0 0 1 0 2.1l-9.1 9.1-4.8 1.6 1.6-4.8 9.1-9.1a1.5 1.5 0 0 1 2.1 0Z"/>
+    <path d="m14.3 6 3.7 3.7"/>
+  </symbol>
+  <symbol id="i-eraser" viewBox="0 0 24 24">
+    <path d="m7 20.5-4.2-4.2a2 2 0 0 1 0-2.8l9.5-9.5a2 2 0 0 1 2.8 0l5.5 5.5a2 2 0 0 1 0 2.8l-8.1 8.2H7Z"/>
+    <path d="M21.5 20.5H7"/><path d="m5.2 11 8.8 8.8"/>
+  </symbol>
+  <symbol id="i-star" viewBox="0 0 24 24">
+    <path d="m12 3.6 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9L12 3.6Z"/>
+  </symbol>
+  <symbol id="i-shapes" viewBox="0 0 24 24">
+    <circle cx="8.2" cy="8.2" r="4.3"/>
+    <rect x="12.3" y="12.3" width="8.3" height="8.3" rx="2.2"/>
+  </symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24">
+    <path d="M4.5 6.5h15"/>
+    <path d="M9.6 6.5V5A1.6 1.6 0 0 1 11.2 3.4h1.6A1.6 1.6 0 0 1 14.4 5v1.5"/>
+    <path d="m6.6 6.5.9 12.1a2 2 0 0 0 2 1.9h5a2 2 0 0 0 2-1.9l.9-12.1"/>
+    <path d="M10.4 10.4v6M13.6 10.4v6"/>
+  </symbol>
+  <symbol id="i-image" viewBox="0 0 24 24">
+    <rect x="3.5" y="4.5" width="17" height="15" rx="3"/>
+    <circle cx="9" cy="10" r="1.9"/>
+    <path d="m4.9 17.7 4.3-4.3a2 2 0 0 1 2.8 0l4.5 4.5"/>
+  </symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24">
+    <path d="M4.6 8.4h9.1a5.8 5.8 0 0 1 0 11.6H7.6"/>
+    <path d="m8.7 4.3-4.1 4.1 4.1 4.1"/>
+  </symbol>
+  <symbol id="i-redo" viewBox="0 0 24 24">
+    <path d="M19.4 8.4h-9.1a5.8 5.8 0 0 0 0 11.6h6.1"/>
+    <path d="m15.3 4.3 4.1 4.1-4.1 4.1"/>
+  </symbol>
+  <symbol id="i-save" viewBox="0 0 24 24">
+    <path d="M12 3.8v10.5"/><path d="m7.7 10.2 4.3 4.3 4.3-4.3"/>
+    <path d="M4.6 16.9v1.7a2.4 2.4 0 0 0 2.4 2.4h10a2.4 2.4 0 0 0 2.4-2.4v-1.7"/>
+  </symbol>
+  <symbol id="i-collapse" viewBox="0 0 24 24">
+    <path d="m6.5 10 5.5 5.5L17.5 10"/><path d="M4.6 19.6h14.8"/>
+  </symbol>
+  <symbol id="i-back" viewBox="0 0 24 24">
+    <path d="M19 12H5.5"/><path d="m11 5.5-6.5 6.5 6.5 6.5"/>
+  </symbol>
+  <symbol id="i-close" viewBox="0 0 24 24">
+    <path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/>
+  </symbol>
+</defs></svg>
+
 <div id="app">
   <!-- 顶栏 -->
   <header id="topbar">
-    <button id="btnGallery" class="ic-btn" title="我的作品">🖼️</button>
-    <div id="title">我的画</div>
+    <button id="btnGallery" class="ic-btn" title="我的作品" aria-label="我的作品"><svg class="ic" viewBox="0 0 24 24"><use href="#i-image"/></svg></button>
+    <div id="title">豆豆的画板</div>
     <div class="top-right">
-      <button id="btnUndo" class="ic-btn" title="撤销">↩️</button>
-      <button id="btnRedo" class="ic-btn" title="重做">↪️</button>
-      <button id="btnSave" class="ic-btn" title="保存">💾</button>
+      <button id="btnUndo" class="ic-btn" title="撤销" aria-label="撤销"><svg class="ic" viewBox="0 0 24 24"><use href="#i-undo"/></svg></button>
+      <button id="btnRedo" class="ic-btn" title="重做" aria-label="重做"><svg class="ic" viewBox="0 0 24 24"><use href="#i-redo"/></svg></button>
+      <button id="btnSave" class="ic-btn" title="保存" aria-label="保存"><svg class="ic" viewBox="0 0 24 24"><use href="#i-save"/></svg></button>
     </div>
   </header>
 
@@ -292,23 +363,23 @@ body.fs .panel{bottom:calc(6px + var(--safe-b));z-index:40}
 
   <!-- 底部工具栏 -->
   <nav id="toolbar">
-    <button class="tab" data-panel="color" id="tabColor">
-      <span class="tab-ic"><span class="dot" id="tabColorDot"></span></span><span>颜色</span>
+    <button class="tab" data-panel="color" id="tabColor" aria-label="颜色">
+      <span class="tab-ic"><svg class="ic" viewBox="0 0 24 24"><use href="#i-palette"/></svg><span class="dot" id="tabColorDot"></span></span><span>颜色</span>
     </button>
-    <button class="tab" data-panel="brush" id="tabBrush">
-      <span class="tab-ic" id="tabBrushIc">🖍️</span><span>笔刷</span>
+    <button class="tab" data-panel="brush" id="tabBrush" aria-label="笔刷">
+      <span class="tab-ic" id="tabBrushIc"><svg class="ic" viewBox="0 0 24 24"><use href="#i-brush"/></svg></span><span>笔刷</span>
     </button>
-    <button class="tab" id="tabEraser">
-      <span class="tab-ic">🧽</span><span>橡皮</span>
+    <button class="tab" id="tabEraser" aria-label="橡皮">
+      <span class="tab-ic"><svg class="ic" viewBox="0 0 24 24"><use href="#i-eraser"/></svg></span><span>橡皮</span>
     </button>
-    <button class="tab" data-panel="sticker" id="tabSticker">
-      <span class="tab-ic">⭐</span><span>贴纸</span>
+    <button class="tab" data-panel="sticker" id="tabSticker" aria-label="贴纸">
+      <span class="tab-ic"><svg class="ic" viewBox="0 0 24 24"><use href="#i-star"/></svg></span><span>贴纸</span>
     </button>
-    <button class="tab" data-panel="shape" id="tabShape">
-      <span class="tab-ic">🔷</span><span>图形</span>
+    <button class="tab" data-panel="shape" id="tabShape" aria-label="图形">
+      <span class="tab-ic"><svg class="ic" viewBox="0 0 24 24"><use href="#i-shapes"/></svg></span><span>图形</span>
     </button>
-    <button class="tab danger" id="tabClear">
-      <span class="tab-ic">🗑️</span><span>清空</span>
+    <button class="tab danger" id="tabClear" aria-label="清空">
+      <span class="tab-ic"><svg class="ic" viewBox="0 0 24 24"><use href="#i-trash"/></svg></span><span>清空</span>
     </button>
   </nav>
 </div>
@@ -335,7 +406,7 @@ body.fs .panel{bottom:calc(6px + var(--safe-b));z-index:40}
 <div class="panel hidden" id="panel-sticker">
   <div class="panel-head"><span>选一个贴纸 ⭐</span><button class="close-x" data-close>×</button></div>
   <div class="grid-sticker" id="stickerGrid"></div>
-  <div class="tip">点一下贴纸，再点画布就贴上去啦～<br>一个手指拖它，两个手指可以放大和转动 🔄</div>
+  <div class="tip">点一下贴纸，再点画布就贴上去啦～<br>一个手指拖它，两个手指可以放大和转动</div>
 </div>
 
 <!-- 面板：图形 -->
@@ -349,23 +420,23 @@ body.fs .panel{bottom:calc(6px + var(--safe-b));z-index:40}
 
 <!-- 全屏迷你工具条 -->
 <div id="fsbar">
-  <button id="fsExit" title="退出全屏">🔽</button>
-  <button id="fsUndo" title="撤销">↩️</button>
-  <button id="fsRedo" title="重做">↪️</button>
-  <button id="fsColor" title="颜色">🎨</button>
-  <button id="fsEraser" title="橡皮">🧽</button>
-  <button id="fsSave" title="保存">💾</button>
+  <button id="fsExit" title="退出全屏" aria-label="退出全屏"><svg class="ic" viewBox="0 0 24 24"><use href="#i-collapse"/></svg></button>
+  <button id="fsUndo" title="撤销" aria-label="撤销"><svg class="ic" viewBox="0 0 24 24"><use href="#i-undo"/></svg></button>
+  <button id="fsRedo" title="重做" aria-label="重做"><svg class="ic" viewBox="0 0 24 24"><use href="#i-redo"/></svg></button>
+  <button id="fsColor" title="颜色" aria-label="颜色"><svg class="ic" viewBox="0 0 24 24"><use href="#i-palette"/></svg></button>
+  <button id="fsEraser" title="橡皮" aria-label="橡皮"><svg class="ic" viewBox="0 0 24 24"><use href="#i-eraser"/></svg></button>
+  <button id="fsSave" title="保存" aria-label="保存"><svg class="ic" viewBox="0 0 24 24"><use href="#i-save"/></svg></button>
 </div>
 
 <!-- 我的作品页 -->
 <div id="gallery" class="page hidden">
   <header class="page-head">
-    <button id="galBack" class="ic-btn">⬅️</button>
+    <button id="galBack" class="ic-btn" aria-label="返回"><svg class="ic" viewBox="0 0 24 24"><use href="#i-back"/></svg></button>
     <div class="page-title">我的作品</div>
-    <button id="galClose" class="ic-btn">✖️</button>
+    <button id="galClose" class="ic-btn" aria-label="关闭"><svg class="ic" viewBox="0 0 24 24"><use href="#i-close"/></svg></button>
   </header>
   <div class="page-body">
-    <div id="galEmpty" class="empty">还没有作品哦～<br>画一张，按 💾 保存吧！</div>
+    <div id="galEmpty" class="empty">还没有作品哦～<br>画一张，按右上角「保存」吧！</div>
     <div id="galGrid" class="gal-grid"></div>
   </div>
 </div>
@@ -387,7 +458,7 @@ body.fs .panel{bottom:calc(6px + var(--safe-b));z-index:40}
 <script>
 "use strict";
 /* =========================================================
-   我的画 · 儿童画画 App
+   豆豆的画板 · 儿童画画 App
    纯 HTML + CSS + JS / Canvas2D / 无依赖 / 离线可用
    结构：① 常量与工具 ② 画布与渲染 ③ 指针交互 ④ 界面逻辑 ⑤ 保存与作品
    ========================================================= */
@@ -423,16 +494,48 @@ const SIZES = [
   { v: 22, n: "超大", bar: 21 }
 ];
 
-// 贴纸
-const STICKERS = ["⭐","🌈","❤️","🌸","🦋","🐱","🐶","🐰","🦄","☀️","🌙","🍎","🍓","🍉","🎈","🚗"];
+// 贴纸：前四组是 emoji；以 # 开头的是自绘矢量贴纸（彩虹小马）
+const STICKERS = [
+  // 动物
+  "🐱","🐶","🐰","🐼","🐨","🦊","🐯","🐷","🐸","🐵",
+  // 大自然
+  "⭐","🌈","❤️","🌸","🌻","🍀","☀️","🌙","❄️",
+  // 好吃的
+  "🍎","🍓","🍉","🍌","🍇","🍊","🍰","🍭","🍦","🍩",
+  // 玩具和小玩意
+  "🎈","🎁","🎀","👑","🚗","🚀","⚽","🦄","🐝","🦋",
+  // 彩虹小马（自绘）
+  "#pony0","#pony1","#pony2","#pony3","#pony4","#pony5"
+];
 
-// 图形
+// 「彩虹小马」配色：body 身体、mane 鬃毛主色、mane2 鬃毛辅色、hoof 蹄子、horn 是否有独角
+const PONIES = [
+  { body: "#ffd6ea", mane: "#c86bff", mane2: "#ff9ede", hoof: "#eaa6cc", horn: false },
+  { body: "#cfe6ff", mane: "#4a90ff", mane2: "#9ed2ff", hoof: "#a8c9ee", horn: false },
+  { body: "#fff0b8", mane: "#ff9a2e", mane2: "#ff6b6b", hoof: "#ecd489", horn: false },
+  { body: "#d6f7d9", mane: "#37c463", mane2: "#a8e86b", hoof: "#b1ddb7", horn: false },
+  { body: "#e6d8ff", mane: "#7c5cff", mane2: "#c9a4ff", hoof: "#c2b0e7", horn: true  },
+  { body: "#ffe4ef", mane: "#ff5c8a", mane2: "#ffd23f", hoof: "#f0bfd0", horn: true  }
+];
+
+// 图形（全部矢量绘制；icon 是面板按钮上的 SVG 轮廓）
 const SHAPES = [
-  { id: "circle",   emoji: "⭕", name: "圆形" },
-  { id: "square",   emoji: "🟦", name: "方形" },
-  { id: "triangle", emoji: "🔺", name: "三角" },
-  { id: "heart",    emoji: "❤️", name: "爱心" },
-  { id: "star",     emoji: "⭐", name: "星形" }
+  { id: "circle",   name: "圆形",   icon: '<circle cx="12" cy="12" r="8.4"/>' },
+  { id: "square",   name: "方形",   icon: '<rect x="3.6" y="3.6" width="16.8" height="16.8" rx="1.2"/>' },
+  { id: "rect",     name: "圆角方", icon: '<rect x="3.6" y="6" width="16.8" height="12" rx="4"/>' },
+  { id: "triangle", name: "三角",   icon: '<path d="M12 3.8 21.2 20H2.8L12 3.8Z"/>' },
+  { id: "diamond",  name: "菱形",   icon: '<path d="M12 2.9 21.1 12 12 21.1 2.9 12 12 2.9Z"/>' },
+  { id: "pentagon", name: "五边形", icon: '<path d="M12 3 20.5 9.2 17.3 19.3H6.7L3.5 9.2 12 3Z"/>' },
+  { id: "hexagon",  name: "六边形", icon: '<path d="M12 2.8 20 7.4v9.2L12 21.2 4 16.6V7.4L12 2.8Z"/>' },
+  { id: "star",     name: "五角星", icon: '<path d="m12 3.4 2.7 5.5 6.1.9-4.4 4.3 1 6-5.4-2.9-5.4 2.9 1-6L3.2 9.8l6.1-.9L12 3.4Z"/>' },
+  { id: "heart",    name: "爱心",   icon: '<path d="M12 20.6S3.6 15.2 3.6 9.4a4.75 4.75 0 0 1 8.4-2.9 4.75 4.75 0 0 1 8.4 2.9c0 5.8-8.4 11.2-8.4 11.2Z"/>' },
+  { id: "drop",     name: "水滴",   icon: '<path d="M12 3c3.6 4.1 7 7.4 7 10.9a7 7 0 0 1-14 0C5 10.4 8.4 7.1 12 3Z"/>' },
+  { id: "moon",     name: "月牙",   icon: '<path d="M20.4 14.9A9.1 9.1 0 0 1 9.1 3.6a9.1 9.1 0 1 0 11.3 11.3Z"/>' },
+  { id: "cloud",    name: "云朵",   icon: '<path d="M7.2 18.4h9.4a3.9 3.9 0 0 0 .4-7.7 5.4 5.4 0 0 0-10.2 1.5 3.4 3.4 0 0 0 .4 6.2Z"/>' },
+  { id: "flower",   name: "花朵",   icon: '<g><ellipse cx="12" cy="6.6" rx="2.5" ry="3.4"/><ellipse cx="12" cy="6.6" rx="2.5" ry="3.4" transform="rotate(60 12 12)"/><ellipse cx="12" cy="6.6" rx="2.5" ry="3.4" transform="rotate(120 12 12)"/><ellipse cx="12" cy="6.6" rx="2.5" ry="3.4" transform="rotate(180 12 12)"/><ellipse cx="12" cy="6.6" rx="2.5" ry="3.4" transform="rotate(240 12 12)"/><ellipse cx="12" cy="6.6" rx="2.5" ry="3.4" transform="rotate(300 12 12)"/></g><circle cx="12" cy="12" r="2.4"/>' },
+  { id: "bolt",     name: "闪电",   icon: '<path d="M13.6 2.8 6 13.3h4.9l-.9 7.9 8.1-10.9h-5.1l.6-7.5Z"/>' },
+  { id: "cross",    name: "十字",   icon: '<path d="M9.6 3.3h4.8v6.3h6.3v4.8h-6.3v6.3H9.6v-6.3H3.3V9.6h6.3V3.3Z"/>' },
+  { id: "arrow",    name: "箭头",   icon: '<path d="M3.4 9.2h8.1V4.8L20.6 12l-9.1 7.2v-4.4H3.4V9.2Z"/>' }
 ];
 
 const LS_GALLERY = "kd_gallery_v1";   // 作品列表
@@ -563,6 +666,134 @@ function heartPath(ctx, cx, cy, w, h) {
 }
 
 // 绘制"一段"笔迹：points[i-1] → points[i]。每段独立 seed，保证重画完全一致
+// 圆角矩形轮廓
+function roundRectPath(ctx, x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+// 正多边形（顶点朝上）
+function polygonPath(ctx, cx, cy, r, n, rot) {
+  const r0 = (rot === undefined) ? -Math.PI / 2 : rot;
+  for (let i = 0; i < n; i++) {
+    const a = r0 + i * Math.PI * 2 / n;
+    const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+}
+
+// 水滴：上尖下圆
+function dropPath(ctx, cx, cy, w, h) {
+  const r = Math.min(w, h) / 2;
+  const top = cy - h / 2;
+  const byc = cy + h / 2 - r;
+  ctx.moveTo(cx, top);
+  ctx.quadraticCurveTo(cx, byc - r * 0.95, cx + r, byc);
+  ctx.arc(cx, byc, r, 0, Math.PI, false);
+  ctx.quadraticCurveTo(cx, byc - r * 0.95, cx, top);
+  ctx.closePath();
+}
+
+// 月牙：外弧 + 内弧（端点严格重合，闭合时不会多出一条线）
+function moonPath(ctx, cx, cy, r) {
+  ctx.arc(cx, cy, r, -1.15, 1.15, false);
+  ctx.arc(cx + r * 0.5, cy, r * 0.917, 1.671, -1.671, true);
+  ctx.closePath();
+}
+
+// 云朵：一条连续的贝塞尔轮廓（左鼓包 → 顶部大鼓包 → 右鼓包 → 平底）
+function cloudPath(ctx, cx, cy, w, h) {
+  const x0 = cx - w / 2, y0 = cy - h / 2;
+  const X = t => x0 + w * t, Y = t => y0 + h * t;
+  ctx.moveTo(X(0.08), Y(0.93));
+  ctx.bezierCurveTo(X(-0.05), Y(0.62), X(0.05), Y(0.27), X(0.25), Y(0.31));
+  ctx.bezierCurveTo(X(0.29), Y(-0.05), X(0.61), Y(-0.05), X(0.65), Y(0.32));
+  ctx.bezierCurveTo(X(0.84), Y(0.24), X(1.04), Y(0.56), X(0.91), Y(0.93));
+  ctx.closePath();
+}
+
+// 花朵：五片花瓣 + 花心
+function flowerPath(ctx, cx, cy, w, h) {
+  const R = Math.min(w, h) / 2;
+  const pr = R * 0.42, pd = R * 0.48;
+  for (let i = 0; i < 5; i++) {
+    const a = i * Math.PI * 2 / 5 - Math.PI / 2;
+    const px = cx + Math.cos(a) * pd, py = cy + Math.sin(a) * pd;
+    ctx.moveTo(px + pr, py);
+    ctx.ellipse(px, py, pr, pr * 0.86, a, 0, Math.PI * 2);
+  }
+  ctx.moveTo(cx + R * 0.32, cy);
+  ctx.arc(cx, cy, R * 0.32, 0, Math.PI * 2);
+}
+
+// 闪电
+function boltPath(ctx, cx, cy, w, h) {
+  const L = cx - w / 2, R = cx + w / 2, T = cy - h / 2, B = cy + h / 2;
+  ctx.moveTo(cx + w * 0.12, T);
+  ctx.lineTo(L + w * 0.06, cy + h * 0.06);
+  ctx.lineTo(cx + w * 0.02, cy + h * 0.06);
+  ctx.lineTo(cx - w * 0.12, B);
+  ctx.lineTo(R - w * 0.06, cy - h * 0.10);
+  ctx.lineTo(cx - w * 0.02, cy - h * 0.10);
+  ctx.closePath();
+}
+
+// 十字
+function crossPath(ctx, cx, cy, w, h) {
+  const t = Math.min(w, h) * 0.34, ht = t / 2, hw = w / 2, hh = h / 2;
+  ctx.moveTo(cx - ht, cy - hh);
+  ctx.lineTo(cx + ht, cy - hh); ctx.lineTo(cx + ht, cy - ht);
+  ctx.lineTo(cx + hw, cy - ht); ctx.lineTo(cx + hw, cy + ht);
+  ctx.lineTo(cx + ht, cy + ht); ctx.lineTo(cx + ht, cy + hh);
+  ctx.lineTo(cx - ht, cy + hh); ctx.lineTo(cx - ht, cy + ht);
+  ctx.lineTo(cx - hw, cy + ht); ctx.lineTo(cx - hw, cy - ht);
+  ctx.lineTo(cx - ht, cy - ht);
+  ctx.closePath();
+}
+
+// 箭头（向右）
+function arrowPath(ctx, cx, cy, w, h) {
+  const t = Math.min(w, h) * 0.36, ht = t / 2, hw = w / 2, hh = h / 2;
+  const nx = cx + hw * 0.10;
+  ctx.moveTo(cx - hw, cy - ht);
+  ctx.lineTo(nx, cy - ht); ctx.lineTo(nx, cy - hh);
+  ctx.lineTo(cx + hw, cy); ctx.lineTo(nx, cy + hh);
+  ctx.lineTo(nx, cy + ht); ctx.lineTo(cx - hw, cy + ht);
+  ctx.closePath();
+}
+
+// 按 id 生成形状轮廓
+function shapePath(ctx, id, cx, cy, w, h, x0, y0, x1, y1) {
+  const L = Math.min(x0, x1), R = Math.max(x0, x1);
+  const T = Math.min(y0, y1), B = Math.max(y0, y1);
+  const m = Math.min(w, h);
+  switch (id) {
+    case "circle":   ctx.ellipse(cx, cy, w / 2, h / 2, 0, 0, Math.PI * 2); break;
+    case "square":   ctx.rect(L, T, w, h); break;
+    case "rect":     roundRectPath(ctx, L, T, w, h, m * 0.26); break;
+    case "triangle": ctx.moveTo(cx, T); ctx.lineTo(R, B); ctx.lineTo(L, B); ctx.closePath(); break;
+    case "diamond":  ctx.moveTo(cx, T); ctx.lineTo(R, cy); ctx.lineTo(cx, B); ctx.lineTo(L, cy); ctx.closePath(); break;
+    case "pentagon": polygonPath(ctx, cx, cy, m / 2, 5); break;
+    case "hexagon":  polygonPath(ctx, cx, cy, m / 2, 6); break;
+    case "star":     starPath(ctx, cx, cy, m / 2, 5); break;
+    case "heart":    heartPath(ctx, cx, cy, w, h); break;
+    case "drop":     dropPath(ctx, cx, cy, w, h); break;
+    case "moon":     moonPath(ctx, cx, cy, m / 2); break;
+    case "cloud":    cloudPath(ctx, cx, cy, w, h); break;
+    case "flower":   flowerPath(ctx, cx, cy, w, h); break;
+    case "bolt":     boltPath(ctx, cx, cy, w, h); break;
+    case "cross":    crossPath(ctx, cx, cy, w, h); break;
+    case "arrow":    arrowPath(ctx, cx, cy, w, h); break;
+    default:         ctx.ellipse(cx, cy, w / 2, h / 2, 0, 0, Math.PI * 2);
+  }
+}
+
 function drawSeg(ctx, s, i) {
   const p0 = s.points[i - 1], p1 = s.points[i];
   const dx = p1.x - p0.x, dy = p1.y - p0.y;
@@ -703,6 +934,113 @@ function drawFirework(ctx, it) {
   ctx.restore();
 }
 
+/* ---------- 自绘「彩虹小马」贴纸 ----------
+   全部用 canvas 路径画出来：不依赖任何 emoji 字体，断网、换手机都是同一副样子。
+   坐标统一归一化到 -0.5 ~ 0.5，绘制前按 size 缩放。 */
+function drawPony(ctx, idx, size) {
+  const n = PONIES.length;
+  const P = PONIES[((idx % n) + n) % n];
+  ctx.save();
+  ctx.scale(size, size);
+  ctx.translate(0.035, 0.045);   // 让画面在方框里视觉居中
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+
+  // 尾巴
+  ctx.strokeStyle = P.mane;
+  ctx.lineWidth = 0.085;
+  ctx.beginPath();
+  ctx.moveTo(-0.28, -0.01);
+  ctx.quadraticCurveTo(-0.47, 0.03, -0.42, 0.27);
+  ctx.stroke();
+  ctx.strokeStyle = P.mane2;
+  ctx.lineWidth = 0.048;
+  ctx.beginPath();
+  ctx.moveTo(-0.29, 0.02);
+  ctx.quadraticCurveTo(-0.44, 0.09, -0.37, 0.29);
+  ctx.stroke();
+
+  // 四条腿 + 蹄子
+  ctx.strokeStyle = P.body;
+  ctx.lineWidth = 0.088;
+  const legs = [-0.21, -0.10, 0.04, 0.15];
+  for (const x of legs) {
+    ctx.beginPath(); ctx.moveTo(x, 0.14); ctx.lineTo(x, 0.40); ctx.stroke();
+  }
+  ctx.strokeStyle = P.hoof;
+  for (const x of legs) {
+    ctx.beginPath(); ctx.moveTo(x, 0.35); ctx.lineTo(x, 0.40); ctx.stroke();
+  }
+
+  // 身体、脖子、头
+  ctx.fillStyle = P.body;
+  ctx.beginPath(); ctx.ellipse(-0.05, 0.04, 0.28, 0.175, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(0.10, -0.05, 0.135, 0.155, -0.30, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(0.215, -0.175, 0.155, 0, Math.PI * 2); ctx.fill();
+
+  // 耳朵
+  ctx.beginPath();
+  ctx.moveTo(0.115, -0.285);
+  ctx.quadraticCurveTo(0.085, -0.435, 0.225, -0.375);
+  ctx.closePath(); ctx.fill();
+
+  // 独角（部分款式才有）
+  if (P.horn) {
+    ctx.fillStyle = "#ffd86b";
+    ctx.beginPath();
+    ctx.moveTo(0.165, -0.295);
+    ctx.lineTo(0.205, -0.475);
+    ctx.lineTo(0.255, -0.285);
+    ctx.closePath(); ctx.fill();
+  }
+
+  // 口鼻
+  ctx.fillStyle = "rgba(255,255,255,.62)";
+  ctx.beginPath(); ctx.ellipse(0.325, -0.115, 0.072, 0.052, 0, 0, Math.PI * 2); ctx.fill();
+
+  // 鬃毛（盖在头上，像刘海）
+  ctx.strokeStyle = P.mane;
+  ctx.lineWidth = 0.105;
+  ctx.beginPath();
+  ctx.moveTo(0.115, -0.315);
+  ctx.quadraticCurveTo(-0.02, -0.17, 0.005, 0.07);
+  ctx.stroke();
+  ctx.strokeStyle = P.mane2;
+  ctx.lineWidth = 0.058;
+  ctx.beginPath();
+  ctx.moveTo(0.175, -0.30);
+  ctx.quadraticCurveTo(0.055, -0.13, 0.075, 0.09);
+  ctx.stroke();
+
+  // 眼睛（带高光）
+  ctx.fillStyle = "#3b2c4a";
+  ctx.beginPath(); ctx.arc(0.255, -0.19, 0.038, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#fff";
+  ctx.beginPath(); ctx.arc(0.268, -0.203, 0.014, 0, Math.PI * 2); ctx.fill();
+
+  // 腮红
+  ctx.fillStyle = "rgba(255,120,170,.34)";
+  ctx.beginPath(); ctx.ellipse(0.20, -0.075, 0.045, 0.028, 0, 0, Math.PI * 2); ctx.fill();
+
+  ctx.restore();
+}
+
+// 小马贴纸在面板里的缩略图（离屏画一次后缓存成 dataURL）
+const ponyThumbCache = {};
+function ponyThumb(idx) {
+  if (ponyThumbCache[idx]) return ponyThumbCache[idx];
+  const px = 44, dpr = 2;
+  const cv = document.createElement("canvas");
+  cv.width = px * dpr; cv.height = px * dpr;
+  const c = cv.getContext("2d");
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.translate(px / 2, px / 2);
+  drawPony(c, idx, px * 0.98);
+  const url = cv.toDataURL();
+  ponyThumbCache[idx] = url;
+  return url;
+}
+
 // 渲染一个绘制对象
 function renderItem(ctx, it) {
   if (it.hidden) return;
@@ -721,10 +1059,15 @@ function renderItem(ctx, it) {
   if (it.type === "sticker") {
     ctx.translate(it.x, it.y);
     ctx.rotate(it.rot || 0);
-    ctx.font = it.size + 'px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(it.emoji, 0, 0);
+    if (it.emoji.charAt(0) === "#") {
+      // 自绘矢量贴纸（#ponyN）
+      drawPony(ctx, parseInt(it.emoji.slice(5), 10) || 0, it.size);
+    } else {
+      ctx.font = it.size + 'px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(it.emoji, 0, 0);
+    }
     ctx.restore();
     return;
   }
@@ -739,16 +1082,7 @@ function renderItem(ctx, it) {
     ctx.fillStyle = it.color;
     ctx.lineWidth = Math.max(2, it.size * 0.75);
     ctx.beginPath();
-    if (it.shape === "circle") ctx.ellipse(cx, cy, w / 2, h / 2, 0, 0, Math.PI * 2);
-    else if (it.shape === "square") ctx.rect(Math.min(x0, x1), Math.min(y0, y1), w, h);
-    else if (it.shape === "triangle") {
-      ctx.moveTo(cx, Math.min(y0, y1));
-      ctx.lineTo(Math.max(x0, x1), Math.max(y0, y1));
-      ctx.lineTo(Math.min(x0, x1), Math.max(y0, y1));
-      ctx.closePath();
-    }
-    else if (it.shape === "heart") heartPath(ctx, cx, cy, w, h);
-    else if (it.shape === "star") starPath(ctx, cx, cy, Math.min(w, h) / 2, 5);
+    shapePath(ctx, it.shape, cx, cy, w, h, x0, y0, x1, y1);
     if (it.filled) { ctx.fill(); ctx.lineWidth = Math.max(1.5, it.size * 0.4); ctx.stroke(); }
     else ctx.stroke();
     ctx.restore();
@@ -1122,7 +1456,8 @@ function markBrush() {
     el.classList.toggle("on", el.dataset.brush === state.brush);
   });
   const br = BRUSHES.find(x => x.id === state.brush);
-  $("tabBrushIc").textContent = br ? br.emoji : "🖍️";
+  // tab 图标改为固定 SVG，这里只同步无障碍标签
+  $("tabBrush").setAttribute("aria-label", "笔刷：" + (br ? br.name : ""));
   $("tabEraser").classList.toggle("on", state.brush === "eraser" && !state.shapeTool);
 }
 
@@ -1150,18 +1485,21 @@ function markSizes() {
 function buildStickers() {
   const box = $("stickerGrid");
   box.innerHTML = "";
-  STICKERS.forEach(em => {
+  STICKERS.forEach(s => {
+    const isPony = s.charAt(0) === "#";
     const b = document.createElement("button");
     b.className = "cell";
-    b.dataset.sticker = em;
-    b.innerHTML = `<span>${em}</span>`;
+    b.dataset.sticker = s;
+    b.innerHTML = isPony
+      ? `<img class="stk-img" alt="小马" src="${ponyThumb(parseInt(s.slice(5), 10) || 0)}">`
+      : `<span>${s}</span>`;
     b.addEventListener("click", () => {
-      state.sticker = em;
+      state.sticker = s;
       state.tool = "sticker";
       state.shapeTool = false;
-      document.querySelectorAll("#stickerGrid .cell").forEach(el => el.classList.toggle("on", el.dataset.sticker === em));
+      document.querySelectorAll("#stickerGrid .cell").forEach(el => el.classList.toggle("on", el.dataset.sticker === s));
       markTabs(); markBrush();
-      toast("点一下画布，贴上 " + em);
+      toast(isPony ? "点一下画布，贴上小马 🐴" : "点一下画布，贴上 " + s);
     });
     box.appendChild(b);
   });
@@ -1175,7 +1513,7 @@ function buildShapes() {
     const b = document.createElement("button");
     b.className = "cell";
     b.dataset.shape = sp.id;
-    b.innerHTML = `<span>${sp.emoji}</span><i>${sp.name}</i>`;
+    b.innerHTML = `<span><svg class="ic" viewBox="0 0 24 24">${sp.icon}</svg></span><i>${sp.name}</i>`;
     b.addEventListener("click", () => {
       state.shape = sp.id;
       state.shapeTool = true;
@@ -1189,11 +1527,14 @@ function buildShapes() {
 
   const fbox = $("fillGrid");
   fbox.innerHTML = "";
-  [{ v: false, n: "⭕ 空心" }, { v: true, n: "🔵 实心" }].forEach(o => {
+  [
+    { v: false, n: "空心", icon: '<circle cx="12" cy="12" r="7.6"/>' },
+    { v: true,  n: "实心", icon: '<circle cx="12" cy="12" r="7.6" fill="currentColor" stroke="none"/>' }
+  ].forEach(o => {
     const b = document.createElement("button");
     b.className = "size-btn";
     b.dataset.fill = String(o.v);
-    b.innerHTML = `<span>${o.n}</span>`;
+    b.innerHTML = `<span><svg class="ic" viewBox="0 0 24 24" style="width:22px;height:22px">${o.icon}</svg></span><span>${o.n}</span>`;
     b.addEventListener("click", () => { state.shapeFilled = o.v; state.shapeTool = true; state.tool = "brush"; markShapes(); markTabs(); });
     fbox.appendChild(b);
   });
@@ -1319,7 +1660,7 @@ function savePng() {
     return;
   }
   // 触发下载（老版本 iOS 不支持 download 时，改为打开图片让用户长按保存）
-  const name = `我的画_${todayStr()}.png`;
+  const name = `豆豆的画板_${todayStr()}.png`;
   try {
     const a = document.createElement("a");
     a.href = url;
@@ -1377,7 +1718,7 @@ function renderGallery() {
     div.className = "gal-item";
     const img = document.createElement("img");
     img.src = it.thumb;
-    img.alt = "我的画";
+    img.alt = "豆豆的画板";
     const del = document.createElement("button");
     del.className = "gal-del";
     del.textContent = "✕";
