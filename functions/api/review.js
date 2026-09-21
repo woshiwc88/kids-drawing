@@ -65,7 +65,11 @@ async function callDeepSeek(env, model, messages, timeoutMs) {
         stream: false
       })
     });
-    if (!resp.ok) return { ok: false, status: resp.status };
+    if (!resp.ok) {
+      let err = "";
+      try { err = (await resp.text()).slice(0, 200); } catch (e) { err = ""; }
+      return { ok: false, status: resp.status, err: err };
+    }
     const data = await resp.json();
     const review = data && data.choices && data.choices[0] &&
       data.choices[0].message && String(data.choices[0].message.content || "").trim();
@@ -91,6 +95,7 @@ export async function onRequestPost(context) {
   }
   if (!desc && !image) return json({ error: "empty" }, 400);
   if (!env.DEEPSEEK_API_KEY) return json({ error: "no_api_key" }, 503);
+  let visionErr = "";
 
   // 档 1：看图说话
   if (image) {
@@ -105,6 +110,7 @@ export async function onRequestPost(context) {
       }
     ], 25000);
     if (r.ok) return json({ review: r.review.slice(0, 600), via: "vision" });
+    visionErr = (r.status || "?") + " " + (r.err || "");
   }
 
   // 档 2：没图或视觉模型不可用 → 文字档，用画面清单兜底
@@ -115,7 +121,7 @@ export async function onRequestPost(context) {
     { role: "system", content: SYSTEM_PROMPT },
     { role: "user", content: userText }
   ], 25000);
-  if (r2.ok) return json({ review: r2.review.slice(0, 600), via: "text" });
+  if (r2.ok) return json({ review: r2.review.slice(0, 600), via: "text", vision_error: visionErr || null });
 
   return json({ error: "upstream_" + (r2.status || 502) }, 502);
 }
