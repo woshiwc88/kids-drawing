@@ -245,7 +245,6 @@ button{font-family:inherit;color:inherit;border:none;background:none;padding:0;c
   font-size:16.5px;font-weight:700;line-height:1.65;color:var(--ink);text-align:left;
 }
 #spriteText.loading{color:var(--ink-soft);text-align:center;display:flex;align-items:center;justify-content:center}
-.sprite-voice{flex:0 0 56px;font-size:22px}
 
 /* 我的作品页 */
 .page{position:fixed;inset:0;background:linear-gradient(180deg,var(--bg),#fdf3ff);z-index:70;display:flex;flex-direction:column;touch-action:pan-y}
@@ -482,7 +481,6 @@ body.fs .panel{bottom:calc(6px + var(--safe-b));z-index:40}
     <div class="card-title">小精灵亮晶晶</div>
     <div id="spriteText" class="loading">亮晶晶正扇着小翅膀飞过来看画…</div>
     <div class="card-actions">
-      <button class="btn ghost sprite-voice" id="spriteVoice" aria-label="读给我听">🔊</button>
       <button class="btn ghost" id="spriteAgain">再听一遍</button>
       <button class="btn primary" id="spriteOk">好嘞</button>
     </div>
@@ -2132,7 +2130,6 @@ function closeSpriteModal() {
 function stopSpriteWork() {
   clearInterval(typeTimer);
   if (spriteFetchCtrl) { try { spriteFetchCtrl.abort(); } catch (e) {} spriteFetchCtrl = null; }
-  if ("speechSynthesis" in window) { try { speechSynthesis.cancel(); } catch (e) {} }
 }
 
 // 打字机效果把点评写出来
@@ -2148,22 +2145,8 @@ function typewriteSprite(text) {
     box.textContent = text.slice(0, i);
     if (i >= text.length) {
       clearInterval(typeTimer);
-      speakSprite(text);   // 写完自动读出来（小朋友可能还不太认字）
     }
   }, 45);
-}
-
-// 朗读（系统自带语音，无依赖、离线可用）
-function speakSprite(text) {
-  if (!("speechSynthesis" in window) || !text) return;
-  try {
-    speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = "zh-CN";
-    u.rate = 0.95;
-    u.pitch = 1.35;
-    speechSynthesis.speak(u);
-  } catch (e) { /* 个别浏览器不支持就静默跳过 */ }
 }
 
 // —— 点评缓存：同一幅画（描述相同）只调一次大模型，重复打开直接读缓存 ——
@@ -2219,16 +2202,10 @@ $("spriteAgain").addEventListener("click", () => {
   const now = Date.now();
   if (now - spriteAgainAt < 10000) {
     toast("亮晶晶还在想，等一小下～");
-    if (spriteLastText) speakSprite(spriteLastText);   // 改为把当前点评再读一遍
     return;
   }
   spriteAgainAt = now;
   requestSpriteReview(true);
-});
-$("spriteVoice").addEventListener("click", () => {
-  if (!("speechSynthesis" in window)) { toast("这个设备不会说话哦"); return; }
-  if (speechSynthesis.speaking) { speechSynthesis.cancel(); return; }
-  if (spriteLastText) speakSprite(spriteLastText);
 });
 $("spriteModal").addEventListener("click", e => { if (e.target.id === "spriteModal") closeSpriteModal(); });
 
