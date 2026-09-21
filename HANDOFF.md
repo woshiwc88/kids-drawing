@@ -45,13 +45,16 @@ python3 -c "import glob,os;[os.unlink(p) for p in glob.glob('.git/**/*.lock',rec
 
 线上校验：`curl -s https://kids-drawing.pages.dev/ | md5` 和本地 `md5 index.html` 对比一致即可。
 
+小精灵点评额外需要：Cloudflare Pages 项目 → Settings → Environment variables → 添加 `DEEPSEEK_API_KEY`（Production，类型 Secret），改完要重新部署一次才生效。没配 Key 时功能自动降级为本地夸夸，不影响其他一切。
+
 ## 四、代码结构
 
 单文件应用，没框架、没后端、没构建步骤。改完刷新页面就能看效果。
 
 | 文件 | 作用 |
 | --- | --- |
-| `index.html` | 全部逻辑，2012 行。HTML + CSS + JS 都在里面，含自绘 SVG 图标雪碧图 |
+| `index.html` | 全部逻辑，2227 行。HTML + CSS + JS 都在里面，含自绘 SVG 图标雪碧图 |
+| `functions/api/review.js` | 小精灵点评接口（Cloudflare Pages Function），把画作描述发给 DeepSeek 返回点评 |
 | `service-worker.js` | 离线缓存，`CACHE_NAME` 由 CI 自动改写，不要手改 |
 | `manifest.webmanifest` | PWA 安装信息 |
 | `icons/` | 192/512 PNG + SVG 图标 |
@@ -67,11 +70,12 @@ python3 -c "import glob,os;[os.unlink(p) for p in glob.glob('.git/**/*.lock',rec
 
 ## 五、改动时的硬约束
 
-1. **别引入任何外部依赖**。要能在完全断网环境下跑，CDN 引用的库、在线字体、外链图片都不行。
+1. **别引入任何外部依赖**。要能在完全断网环境下跑，CDN 引用的库、在线字体、外链图片都不行。唯一的例外是「小精灵点评」：它是联网增强功能，调本站 `/api/review`（Pages Function），**断网或接口异常必须自动降级为本地夸夸**，不能报错、不能影响画画主流程。
 2. **贴纸不要用位图**。现在全都是矢量绘制/canvas 画出来的，保持这个做法。
 3. **小马是原创画风**，不要换成《小马宝莉》官方形象（版权）。
 4. 任何新状态都要进 `pushHistory()`，否则撤销一步会跳回去一大截。
 5. 拖动、缩放这类高频操作走 rAF 节流，别在 `pointermove` 里同步重绘整张画布。
+6. **DeepSeek API Key 只放 Cloudflare Pages 环境变量 `DEEPSEEK_API_KEY`**，绝不写进代码、仓库或前端。
 
 ## 六、验证方式
 
@@ -89,6 +93,7 @@ python3 -c "import glob,os;[os.unlink(p) for p in glob.glob('.git/**/*.lock',rec
 | — | `a275d4c` | 加 GitHub Actions 自动部署 |
 | — | `7c6620b` | 改标题「豆豆的画板」；图标换自绘 SVG；贴纸 45 个、图形 16 种 |
 | 最新 | `1688dac` | 贴纸任意工具可抓取拖动；修拖后消失；双指缩放/旋转不跳变；拖出画布自动收回 |
+| — | （待提交） | 小精灵 AI 点评：保存后出现邀请按钮，DeepSeek 根据画作描述生成 6 岁向趣味点评，打字机呈现 + 语音朗读；断网降级本地夸夸；Key 走 Cloudflare 环境变量 |
 
 ## 八、待办 / 已知问题
 

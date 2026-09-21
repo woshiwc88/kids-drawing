@@ -228,6 +228,25 @@ button{font-family:inherit;color:inherit;border:none;background:none;padding:0;c
 .btn.primary{background:linear-gradient(135deg,#ff9d6b,#ff7b7b);color:#fff;box-shadow:var(--shadow)}
 .btn.ghost{background:#f4f0fa;color:var(--ink-soft)}
 
+/* 小精灵点评 */
+#spriteBtn{
+  position:fixed;left:50%;bottom:calc(18px + var(--safe-b));transform:translateX(-50%);
+  z-index:55;height:52px;padding:0 22px;border-radius:99px;
+  background:linear-gradient(135deg,#c86bff,#ff9ede);color:#fff;
+  font-size:17px;font-weight:900;box-shadow:0 10px 26px rgba(155,92,255,.45);
+  display:flex;align-items:center;gap:8px;animation:spriteFloat 1.6s ease-in-out infinite;
+}
+#spriteBtn:active{transform:translateX(-50%) scale(.95)}
+@keyframes spriteFloat{0%,100%{translate:0 0}50%{translate:0 -6px}}
+.sprite-emoji{font-size:44px;line-height:1;animation:spriteWiggle 1.2s ease-in-out infinite}
+@keyframes spriteWiggle{0%,100%{transform:rotate(-8deg)}50%{transform:rotate(8deg)}}
+#spriteText{
+  margin:12px 0 16px;padding:14px;min-height:88px;border-radius:18px;background:#fdf3ff;
+  font-size:16.5px;font-weight:700;line-height:1.65;color:var(--ink);text-align:left;
+}
+#spriteText.loading{color:var(--ink-soft);text-align:center;display:flex;align-items:center;justify-content:center}
+.sprite-voice{flex:0 0 56px;font-size:22px}
+
 /* 我的作品页 */
 .page{position:fixed;inset:0;background:linear-gradient(180deg,var(--bg),#fdf3ff);z-index:70;display:flex;flex-direction:column;touch-action:pan-y}
 .page-head{
@@ -449,6 +468,23 @@ body.fs .panel{bottom:calc(6px + var(--safe-b));z-index:40}
     <div class="card-actions">
       <button class="btn ghost" id="modalCancel">取消</button>
       <button class="btn primary" id="modalOk">重新画</button>
+    </div>
+  </div>
+</div>
+
+<!-- 小精灵点评：保存后出现的邀请按钮 -->
+<button id="spriteBtn" class="hidden" aria-label="让小精灵看看画">✨ 小精灵想看看画</button>
+
+<!-- 小精灵点评弹窗 -->
+<div id="spriteModal" class="modal hidden">
+  <div class="card">
+    <div class="sprite-emoji">🧚</div>
+    <div class="card-title">小精灵亮晶晶</div>
+    <div id="spriteText" class="loading">亮晶晶正扇着小翅膀飞过来看画…</div>
+    <div class="card-actions">
+      <button class="btn ghost sprite-voice" id="spriteVoice" aria-label="读给我听">🔊</button>
+      <button class="btn ghost" id="spriteAgain">再听一遍</button>
+      <button class="btn primary" id="spriteOk">好嘞</button>
     </div>
   </div>
 </div>
@@ -1798,6 +1834,7 @@ function savePng() {
   const thumb = composeCanvas(360).toDataURL("image/jpeg", 0.72);
   saveToGallery(thumb);
   toast("保存好啦 💾 " + name);
+  spriteOffer();
 }
 
 function readGallery() {
@@ -1997,6 +2034,184 @@ document.addEventListener("dblclick", e => e.preventDefault(), { passive: false 
 document.addEventListener("touchstart", e => {
   if (e.touches.length > 1 && e.target.closest && e.target.closest("#stage")) e.preventDefault();
 }, { passive: false });
+
+/* ---------- ⑥ 小精灵点评（AI，联网增强功能，断网自动降级本地夸夸） ---------- */
+
+// 贴纸中文名（键与 STICKERS 完全一致；"#ponyN" 走 PONY_NAMES）
+const STICKER_NAMES = {
+  "🐱":"小猫","🐶":"小狗","🐰":"兔子","🐼":"熊猫","🐨":"考拉","🦊":"狐狸","🐯":"老虎","🐷":"小猪","🐸":"青蛙","🐵":"猴子",
+  "⭐":"星星","🌈":"彩虹","❤️":"爱心","🌸":"樱花","🌻":"向日葵","🍀":"四叶草","☀️":"太阳","🌙":"月亮","❄️":"雪花",
+  "🍎":"苹果","🍓":"草莓","🍉":"西瓜","🍌":"香蕉","🍇":"葡萄","🍊":"橘子","🍰":"蛋糕","🍭":"棒棒糖","🍦":"冰淇淋","🍩":"甜甜圈",
+  "🎈":"气球","🎁":"礼物","🎀":"蝴蝶结","👑":"皇冠","🚗":"小汽车","🚀":"火箭","⚽":"足球","🦄":"独角兽","🐝":"小蜜蜂","🦋":"蝴蝶"
+};
+const PONY_NAMES = ["粉色小马","蓝色小马","黄色小马","绿色小马","紫色独角小马","粉色独角小马"];
+
+function colorName(hex) {
+  const f = COLORS.find(c => c.c.toLowerCase() === String(hex || "").toLowerCase());
+  return f ? f.n + "色" : "";
+}
+
+// 把当前画作整理成文字描述（给大模型看的"画的内容"）
+function describeArtwork() {
+  const stickerCount = {}, shapeCount = {};
+  const strokeColors = new Set(), funBrushes = new Set();
+  let strokeN = 0;
+  state.items.forEach(it => {
+    if (it.type === "sticker") {
+      let name = "小贴纸";
+      if (String(it.emoji).charAt(0) === "#") name = PONY_NAMES[+String(it.emoji).slice(5)] || "彩虹小马";
+      else if (STICKER_NAMES[it.emoji]) name = STICKER_NAMES[it.emoji];
+      stickerCount[name] = (stickerCount[name] || 0) + 1;
+    } else if (it.type === "shape") {
+      const sh = SHAPES.find(s => s.id === it.shape);
+      const cn = colorName(it.color);
+      const name = (cn ? cn + "的" : "") + (sh ? sh.name : "图形");
+      shapeCount[name] = (shapeCount[name] || 0) + 1;
+    } else if (it.type === "stroke") {
+      if (it.brush !== "eraser") {
+        strokeN++;
+        const cn = colorName(it.color);
+        if (cn) strokeColors.add(cn);
+        if (it.brush === "rainbow") funBrushes.add("彩虹笔");
+        else if (it.brush === "star") funBrushes.add("星星笔");
+        else if (it.brush === "bubble") funBrushes.add("泡泡笔");
+        else if (it.brush === "firework") funBrushes.add("烟花笔");
+      }
+    }
+  });
+  const expand = obj => Object.entries(obj).map(([n, c]) => c > 1 ? c + "个" + n : n);
+  const parts = [];
+  const stickers = expand(stickerCount), shapes = expand(shapeCount);
+  if (stickers.length) parts.push("贴着" + stickers.join("、"));
+  if (shapes.length) parts.push("画着" + shapes.join("、"));
+  if (strokeN) {
+    const cs = [...strokeColors].slice(0, 5);
+    parts.push("用" + (cs.length ? cs.join("、") : "彩色") + "的笔画了" + strokeN + "笔" +
+      (funBrushes.size ? "，还用了" + [...funBrushes].join("、") : ""));
+  }
+  return {
+    text: parts.join("；") || "一幅刚刚开始的画",
+    stickers: Object.keys(stickerCount),
+    colors: [...strokeColors]
+  };
+}
+
+// 断网 / 接口不可用时的本地夸夸（也用真实画面内容，不敷衍）
+function localPraise(info) {
+  const thing = info.stickers[0] || "这幅画";
+  const thing2 = info.stickers[1] || info.stickers[0] || "小画家";
+  const color = info.colors[0] || "彩虹色";
+  const pool = [
+    `哇——${thing}！它正在画里咕噜咕噜冒着彩色泡泡开派对呢～豆豆的${color}用得太好看啦，${thing}悄悄告诉我，它最最最喜欢你哦！🌈✨ 你说，它今晚会不会梦见你呀？`,
+    `天呐！${thing}和${thing2}在画里手拉手转圈圈，嘚嘚嘚，转得我都晕啦！豆豆选的颜色像糖果一样甜～🍭 你猜它们转完圈要去哪里冒险？`,
+    `哇塞，${thing}从画里探出小脑袋跟我打招呼啦！它说豆豆是世界上最会画画的小魔法师，噼里啪啦变出这么多好看的颜色！🪄 下次能不能给它画个小伙伴呀？`
+  ];
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+// —— 保存后的邀请按钮 ——
+let spriteBtnTimer = null;
+function spriteOffer() {
+  const b = $("spriteBtn");
+  b.classList.remove("hidden");
+  clearTimeout(spriteBtnTimer);
+  spriteBtnTimer = setTimeout(hideSpriteBtn, 30000);
+}
+function hideSpriteBtn() {
+  clearTimeout(spriteBtnTimer);
+  $("spriteBtn").classList.add("hidden");
+}
+drawCanvas.addEventListener("pointerdown", hideSpriteBtn);
+
+// —— 点评弹窗 ——
+let spriteInfo = null;      // 当前画作的描述信息
+let spriteLastText = "";    // 最近一次点评（供朗读 / 重听）
+let typeTimer = null;
+let spriteFetchCtrl = null;
+
+function openSpriteModal() {
+  hideSpriteBtn();
+  spriteInfo = describeArtwork();
+  $("spriteModal").classList.remove("hidden");
+  requestSpriteReview();
+}
+function closeSpriteModal() {
+  $("spriteModal").classList.add("hidden");
+  stopSpriteWork();
+}
+function stopSpriteWork() {
+  clearInterval(typeTimer);
+  if (spriteFetchCtrl) { try { spriteFetchCtrl.abort(); } catch (e) {} spriteFetchCtrl = null; }
+  if ("speechSynthesis" in window) { try { speechSynthesis.cancel(); } catch (e) {} }
+}
+
+// 打字机效果把点评写出来
+function typewriteSprite(text) {
+  clearInterval(typeTimer);
+  spriteLastText = text;
+  const box = $("spriteText");
+  box.classList.remove("loading");
+  box.textContent = "";
+  let i = 0;
+  typeTimer = setInterval(() => {
+    i++;
+    box.textContent = text.slice(0, i);
+    if (i >= text.length) {
+      clearInterval(typeTimer);
+      speakSprite(text);   // 写完自动读出来（小朋友可能还不太认字）
+    }
+  }, 45);
+}
+
+// 朗读（系统自带语音，无依赖、离线可用）
+function speakSprite(text) {
+  if (!("speechSynthesis" in window) || !text) return;
+  try {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "zh-CN";
+    u.rate = 0.95;
+    u.pitch = 1.35;
+    speechSynthesis.speak(u);
+  } catch (e) { /* 个别浏览器不支持就静默跳过 */ }
+}
+
+// 请求 AI 点评；任何失败都降级为本地夸夸，绝不冷场
+async function requestSpriteReview() {
+  stopSpriteWork();
+  const box = $("spriteText");
+  box.classList.add("loading");
+  box.textContent = "亮晶晶正扇着小翅膀飞过来看画…";
+  try {
+    spriteFetchCtrl = new AbortController();
+    const timer = setTimeout(() => spriteFetchCtrl.abort(), 18000);
+    const resp = await fetch("/api/review", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ description: spriteInfo.text }),
+      signal: spriteFetchCtrl.signal
+    });
+    clearTimeout(timer);
+    if (!resp.ok) throw new Error("http_" + resp.status);
+    const data = await resp.json();
+    if (!data || !data.review) throw new Error("empty");
+    typewriteSprite(String(data.review));
+  } catch (e) {
+    typewriteSprite(localPraise(spriteInfo));
+  } finally {
+    spriteFetchCtrl = null;
+  }
+}
+
+$("spriteBtn").addEventListener("click", openSpriteModal);
+$("spriteOk").addEventListener("click", closeSpriteModal);
+$("spriteAgain").addEventListener("click", requestSpriteReview);
+$("spriteVoice").addEventListener("click", () => {
+  if (!("speechSynthesis" in window)) { toast("这个设备不会说话哦"); return; }
+  if (speechSynthesis.speaking) { speechSynthesis.cancel(); return; }
+  if (spriteLastText) speakSprite(spriteLastText);
+});
+$("spriteModal").addEventListener("click", e => { if (e.target.id === "spriteModal") closeSpriteModal(); });
 
 init();
 
