@@ -1136,6 +1136,7 @@ function redraw() {
   dctx.globalCompositeOperation = "source-over";
   for (const it of state.items) renderItem(dctx, it);
   dctx.restore();
+  updateSpriteBtn();
 }
 
 // 清空预览层
@@ -1834,7 +1835,6 @@ function savePng() {
   const thumb = composeCanvas(360).toDataURL("image/jpeg", 0.72);
   saveToGallery(thumb);
   toast("保存好啦 💾 " + name);
-  spriteOffer();
 }
 
 function readGallery() {
@@ -2109,19 +2109,10 @@ function localPraise(info) {
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
-// —— 保存后的邀请按钮 ——
-let spriteBtnTimer = null;
-function spriteOffer() {
-  const b = $("spriteBtn");
-  b.classList.remove("hidden");
-  clearTimeout(spriteBtnTimer);
-  spriteBtnTimer = setTimeout(hideSpriteBtn, 30000);
+// —— 常驻入口按钮：画布上有内容就一直在，清空或撤销到空白时才消失 ——
+function updateSpriteBtn() {
+  $("spriteBtn").classList.toggle("hidden", state.items.length === 0);
 }
-function hideSpriteBtn() {
-  clearTimeout(spriteBtnTimer);
-  $("spriteBtn").classList.add("hidden");
-}
-drawCanvas.addEventListener("pointerdown", hideSpriteBtn);
 
 // —— 点评弹窗 ——
 let spriteInfo = null;      // 当前画作的描述信息
@@ -2130,10 +2121,9 @@ let typeTimer = null;
 let spriteFetchCtrl = null;
 
 function openSpriteModal() {
-  hideSpriteBtn();
   spriteInfo = describeArtwork();
   $("spriteModal").classList.remove("hidden");
-  requestSpriteReview();
+  requestSpriteReview(false);
 }
 function closeSpriteModal() {
   $("spriteModal").classList.add("hidden");
@@ -2176,9 +2166,25 @@ function speakSprite(text) {
   } catch (e) { /* 个别浏览器不支持就静默跳过 */ }
 }
 
-// 请求 AI 点评；任何失败都降级为本地夸夸，绝不冷场
-async function requestSpriteReview() {
+// —— 点评缓存：同一幅画（描述相同）只调一次大模型，重复打开直接读缓存 ——
+const LS_SPRITE = "kd_sprite_review_v1";
+function readSpriteCache() {
+  try { return JSON.parse(localStorage.getItem(LS_SPRITE) || "null"); } catch (e) { return null; }
+}
+function writeSpriteCache(desc, review) {
+  try { localStorage.setItem(LS_SPRITE, JSON.stringify({ desc: desc, review: review })); } catch (e) { /* 满了就算了 */ }
+}
+
+// 请求 AI 点评；force=false 且画面没变时直接用缓存，不调用大模型
+// 任何失败都降级为本地夸夸（本地夸夸不写缓存，下次联网还能拿到 AI 版），绝不冷场
+async function requestSpriteReview(force) {
   stopSpriteWork();
+  const desc = spriteInfo.text;
+  const cache = readSpriteCache();
+  if (!force && cache && cache.desc === desc && cache.review) {
+    typewriteSprite(cache.review);   // 缓存命中：秒出，零 API 调用
+    return;
+  }
   const box = $("spriteText");
   box.classList.add("loading");
   box.textContent = "亮晶晶正扇着小翅膀飞过来看画…";
@@ -2188,14 +2194,16 @@ async function requestSpriteReview() {
     const resp = await fetch("/api/review", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ description: spriteInfo.text }),
+      body: JSON.stringify({ description: desc }),
       signal: spriteFetchCtrl.signal
     });
     clearTimeout(timer);
     if (!resp.ok) throw new Error("http_" + resp.status);
     const data = await resp.json();
     if (!data || !data.review) throw new Error("empty");
-    typewriteSprite(String(data.review));
+    const review = String(data.review);
+    writeSpriteCache(desc, review);   // 只缓存 AI 成功结果
+    typewriteSprite(review);
   } catch (e) {
     typewriteSprite(localPraise(spriteInfo));
   } finally {
@@ -2205,7 +2213,18 @@ async function requestSpriteReview() {
 
 $("spriteBtn").addEventListener("click", openSpriteModal);
 $("spriteOk").addEventListener("click", closeSpriteModal);
-$("spriteAgain").addEventListener("click", requestSpriteReview);
+// 「再听一遍」= 强制生成新点评，但 10 秒内连点不重复调用（防小朋友刷按钮烧 API）
+let spriteAgainAt = 0;
+$("spriteAgain").addEventListener("click", () => {
+  const now = Date.now();
+  if (now - spriteAgainAt < 10000) {
+    toast("亮晶晶还在想，等一小下～");
+    if (spriteLastText) speakSprite(spriteLastText);   // 改为把当前点评再读一遍
+    return;
+  }
+  spriteAgainAt = now;
+  requestSpriteReview(true);
+});
 $("spriteVoice").addEventListener("click", () => {
   if (!("speechSynthesis" in window)) { toast("这个设备不会说话哦"); return; }
   if (speechSynthesis.speaking) { speechSynthesis.cancel(); return; }
