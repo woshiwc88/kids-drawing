@@ -2182,7 +2182,7 @@ async function requestSpriteReview(force) {
   box.textContent = "亮晶晶正扇着小翅膀飞过来看画…";
   try {
     spriteFetchCtrl = new AbortController();
-    const timer = setTimeout(() => spriteFetchCtrl.abort(), 18000);
+    const timer = setTimeout(() => spriteFetchCtrl.abort(), 25000);
     const resp = await fetch("/api/review", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

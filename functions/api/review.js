@@ -112,7 +112,7 @@ export async function onRequestPost(context) {
           { type: "image_url", image_url: { url: "data:image/jpeg;base64," + image, detail: "auto" } }
         ]
       }
-    ], 25000, 1200);
+    ], 28000, 1200);
     if (r.ok) return json({ review: r.review.slice(0, 600), via: "vision" });
     visionErr = (r.status || "?") + " " + (r.err || "");
   }

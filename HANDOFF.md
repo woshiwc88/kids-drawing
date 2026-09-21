@@ -47,6 +47,8 @@ python3 -c "import glob,os;[os.unlink(p) for p in glob.glob('.git/**/*.lock',rec
 
 小精灵点评额外需要：Cloudflare Pages 项目 → Settings → Environment variables → 添加 `DEEPSEEK_API_KEY`（Production，类型 Secret），改完要重新部署一次才生效。没配 Key 时功能自动降级为本地夸夸，不影响其他一切。
 
+点评链路三档，从上往下兜底：① 图片 → `deepseek-v4-flash-vision-exp` 看图说话（**唯一支持图像的 DeepSeek 模型**，其他模型传图会 400）；② 视觉档失败 → `deepseek-chat` 依据画面元素清单说话；③ 都失败或断网 → 前端本地夸夸。返回体里的 `via` 字段标明走了哪一档，排查时先看它。视觉档首次调用可能十几秒，正常约 5 秒。
+
 ## 四、代码结构
 
 单文件应用，没框架、没后端、没构建步骤。改完刷新页面就能看效果。
@@ -54,7 +56,7 @@ python3 -c "import glob,os;[os.unlink(p) for p in glob.glob('.git/**/*.lock',rec
 | 文件 | 作用 |
 | --- | --- |
 | `index.html` | 全部逻辑，2227 行。HTML + CSS + JS 都在里面，含自绘 SVG 图标雪碧图 |
-| `functions/api/review.js` | 小精灵点评接口（Cloudflare Pages Function），把画作描述发给 DeepSeek 返回点评 |
+| `functions/api/review.js` | 小精灵点评接口（Cloudflare Pages Function）：把画作图片 base64 发给 DeepSeek 视觉模型；视觉不可用时退化成文字模型 |
 | `service-worker.js` | 离线缓存，`CACHE_NAME` 由 CI 自动改写，不要手改 |
 | `manifest.webmanifest` | PWA 安装信息 |
 | `icons/` | 192/512 PNG + SVG 图标 |
