@@ -228,16 +228,10 @@ button{font-family:inherit;color:inherit;border:none;background:none;padding:0;c
 .btn.primary{background:linear-gradient(135deg,#ff9d6b,#ff7b7b);color:#fff;box-shadow:var(--shadow)}
 .btn.ghost{background:#f4f0fa;color:var(--ink-soft)}
 
-/* 小精灵点评 */
-#spriteBtn{
-  position:fixed;left:50%;bottom:calc(18px + var(--safe-b));transform:translateX(-50%);
-  z-index:55;height:52px;padding:0 22px;border-radius:99px;
-  background:linear-gradient(135deg,#c86bff,#ff9ede);color:#fff;
-  font-size:17px;font-weight:900;box-shadow:0 10px 26px rgba(155,92,255,.45);
-  display:flex;align-items:center;gap:8px;animation:spriteFloat 1.6s ease-in-out infinite;
-}
-#spriteBtn:active{transform:translateX(-50%) scale(.95)}
-@keyframes spriteFloat{0%,100%{translate:0 0}50%{translate:0 -6px}}
+/* 小精灵点评：入口是顶栏常驻的小图标，不占画布 */
+.sprite-btn{font-size:19px;line-height:1}
+.sprite-btn:not(.hidden){animation:spriteTwinkle 2.4s ease-in-out infinite}
+@keyframes spriteTwinkle{0%,100%{transform:scale(1) rotate(0)}50%{transform:scale(1.18) rotate(12deg)}}
 .sprite-emoji{font-size:44px;line-height:1;animation:spriteWiggle 1.2s ease-in-out infinite}
 @keyframes spriteWiggle{0%,100%{transform:rotate(-8deg)}50%{transform:rotate(8deg)}}
 #spriteText{
@@ -369,6 +363,7 @@ body.fs .panel{bottom:calc(6px + var(--safe-b));z-index:40}
       <button id="btnUndo" class="ic-btn" title="撤销" aria-label="撤销"><svg class="ic" viewBox="0 0 24 24"><use href="#i-undo"/></svg></button>
       <button id="btnRedo" class="ic-btn" title="重做" aria-label="重做"><svg class="ic" viewBox="0 0 24 24"><use href="#i-redo"/></svg></button>
       <button id="btnSave" class="ic-btn" title="保存" aria-label="保存"><svg class="ic" viewBox="0 0 24 24"><use href="#i-save"/></svg></button>
+      <button id="spriteBtn" class="ic-btn sprite-btn hidden" title="小精灵看看画" aria-label="小精灵看看画">✨</button>
     </div>
   </header>
 
@@ -471,8 +466,7 @@ body.fs .panel{bottom:calc(6px + var(--safe-b));z-index:40}
   </div>
 </div>
 
-<!-- 小精灵点评：保存后出现的邀请按钮 -->
-<button id="spriteBtn" class="hidden" aria-label="让小精灵看看画">✨ 小精灵想看看画</button>
+<!-- 小精灵点评：常驻顶栏的小图标（画布有内容即显示） -->
 
 <!-- 小精灵点评弹窗 -->
 <div id="spriteModal" class="modal hidden">
@@ -2119,7 +2113,17 @@ let typeTimer = null;
 let spriteFetchCtrl = null;
 
 function openSpriteModal() {
-  spriteInfo = describeArtwork();
+  const info = describeArtwork();
+  // 导出一张给大模型看的图（768px JPEG，够清楚又不太大）
+  let img = "";
+  try { img = (composeCanvas(768).toDataURL("image/jpeg", 0.72).split(",")[1] || ""); } catch (e) { img = ""; }
+  spriteInfo = {
+    text: info.text,
+    stickers: info.stickers,
+    colors: info.colors,
+    image: img,
+    key: (img ? hash32(img) : "noimg") + "|" + info.text   // 画面变了 key 就变
+  };
   $("spriteModal").classList.remove("hidden");
   requestSpriteReview(false);
 }
@@ -2154,17 +2158,22 @@ const LS_SPRITE = "kd_sprite_review_v1";
 function readSpriteCache() {
   try { return JSON.parse(localStorage.getItem(LS_SPRITE) || "null"); } catch (e) { return null; }
 }
-function writeSpriteCache(desc, review) {
-  try { localStorage.setItem(LS_SPRITE, JSON.stringify({ desc: desc, review: review })); } catch (e) { /* 满了就算了 */ }
+function writeSpriteCache(key, review) {
+  try { localStorage.setItem(LS_SPRITE, JSON.stringify({ key: key, review: review })); } catch (e) { /* 满了就算了 */ }
+}
+// 给图片算一个便宜的指纹，用来判断"这幅画是不是变了"
+function hash32(s) {
+  let h = 5381;
+  for (let i = 0; i < s.length; i += 17) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+  return h.toString(16) + "-" + s.length;
 }
 
 // 请求 AI 点评；force=false 且画面没变时直接用缓存，不调用大模型
 // 任何失败都降级为本地夸夸（本地夸夸不写缓存，下次联网还能拿到 AI 版），绝不冷场
 async function requestSpriteReview(force) {
   stopSpriteWork();
-  const desc = spriteInfo.text;
   const cache = readSpriteCache();
-  if (!force && cache && cache.desc === desc && cache.review) {
+  if (!force && cache && cache.key === spriteInfo.key && cache.review) {
     typewriteSprite(cache.review);   // 缓存命中：秒出，零 API 调用
     return;
   }
@@ -2177,7 +2186,7 @@ async function requestSpriteReview(force) {
     const resp = await fetch("/api/review", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ description: desc }),
+      body: JSON.stringify({ description: spriteInfo.text, image: spriteInfo.image }),
       signal: spriteFetchCtrl.signal
     });
     clearTimeout(timer);
@@ -2185,7 +2194,7 @@ async function requestSpriteReview(force) {
     const data = await resp.json();
     if (!data || !data.review) throw new Error("empty");
     const review = String(data.review);
-    writeSpriteCache(desc, review);   // 只缓存 AI 成功结果
+    writeSpriteCache(spriteInfo.key, review);   // 只缓存 AI 成功结果
     typewriteSprite(review);
   } catch (e) {
     typewriteSprite(localPraise(spriteInfo));
