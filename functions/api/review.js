@@ -46,7 +46,7 @@ function json(data, status = 200) {
 }
 
 // 调 DeepSeek（OpenAI 兼容格式），messages 透传
-async function callDeepSeek(env, model, messages, timeoutMs) {
+async function callDeepSeek(env, model, messages, timeoutMs, maxTokens) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -61,7 +61,7 @@ async function callDeepSeek(env, model, messages, timeoutMs) {
         model: model,
         messages: messages,
         temperature: 1.2,
-        max_tokens: 320,
+        max_tokens: maxTokens || 320,
         stream: false
       })
     });
@@ -71,9 +71,13 @@ async function callDeepSeek(env, model, messages, timeoutMs) {
       return { ok: false, status: resp.status, err: err };
     }
     const data = await resp.json();
-    const review = data && data.choices && data.choices[0] &&
-      data.choices[0].message && String(data.choices[0].message.content || "").trim();
-    return review ? { ok: true, review: review } : { ok: false, status: 502 };
+    const msg = data && data.choices && data.choices[0] ? data.choices[0].message : null;
+    const review = msg ? String(msg.content || msg.reasoning_content || "").trim() : "";
+    if (review) return { ok: true, review: review };
+    // 拿不到正文时把原始返回带回去，方便定位
+    let raw = "";
+    try { raw = JSON.stringify(data).slice(0, 300); } catch (e) { raw = ""; }
+    return { ok: false, status: 502, err: raw };
   } catch (e) {
     return { ok: false, status: e && e.name === "AbortError" ? 504 : 502 };
   } finally {
@@ -108,7 +112,7 @@ export async function onRequestPost(context) {
           { type: "image_url", image_url: { url: "data:image/jpeg;base64," + image, detail: "auto" } }
         ]
       }
-    ], 25000);
+    ], 25000, 1200);
     if (r.ok) return json({ review: r.review.slice(0, 600), via: "vision" });
     visionErr = (r.status || "?") + " " + (r.err || "");
   }
