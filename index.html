@@ -81,11 +81,12 @@ button{font-family:inherit;color:inherit;border:none;background:none;padding:0;c
 .ic-btn[disabled]{opacity:.32}
 .ic-btn.on{background:linear-gradient(180deg,#fff5ec,#ffe6d6);box-shadow:0 0 0 3px #ffd0b0,var(--shadow)}
 #title{
-  flex:1;text-align:center;font-size:20px;font-weight:800;letter-spacing:1px;
+  /* min-width:0 很关键：手机上按钮挤满时标题才能收缩省略，否则 ✨ 会被挤出屏幕 */
+  flex:1 1 auto;min-width:0;text-align:center;font-size:18px;font-weight:800;letter-spacing:.5px;
   color:var(--brand-2);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
-.top-right{display:flex;gap:8px}
+.top-right{display:flex;gap:8px;flex:0 0 auto}
 
 /* 画布舞台 */
 #stage{
@@ -295,6 +296,36 @@ body.fs .panel{bottom:calc(6px + var(--safe-b));z-index:40}
   .tab .tab-ic{font-size:21px}
   .tab{font-size:11px}
 }
+
+/* 窄屏手机：收窄顶栏按钮，保证 ✨ 小精灵图标始终排得进屏幕 */
+@media (max-width:400px){
+  #topbar{gap:6px;padding-left:6px;padding-right:6px}
+  .top-right{gap:6px}
+  .ic-btn{width:42px;height:42px;min-width:42px;border-radius:14px}
+  .ic-btn .ic{width:22px;height:22px}
+  #title{font-size:16px;letter-spacing:0}
+  .sprite-btn{font-size:18px}
+}
+@media (max-width:340px){
+  .ic-btn{width:38px;height:38px;min-width:38px;border-radius:12px}
+  .ic-btn .ic{width:20px;height:20px}
+  #title{font-size:15px}
+}
+
+/* 作品大图预览 */
+.viewer-card{
+  width:min(360px,92vw);background:#fff;border-radius:26px;padding:14px 14px 16px;
+  text-align:center;box-shadow:0 16px 40px rgba(70,45,95,.28);animation:pop .18s ease-out;
+}
+#viewerImgWrap{
+  border-radius:18px;overflow:hidden;background:#f7f5fb;
+  box-shadow:inset 0 0 0 2px #ece5f8;
+}
+#viewerImg{display:block;width:100%;max-height:52vh;object-fit:contain;background:#fff}
+#viewerDate{margin:10px 0 12px;font-size:13px;font-weight:800;color:var(--ink-soft)}
+.viewer-actions{display:flex;gap:8px}
+.viewer-actions .btn{height:50px;font-size:16px}
+#viewerEdit{flex:1.2}
 </style>
 </head>
 <body>
@@ -358,7 +389,7 @@ body.fs .panel{bottom:calc(6px + var(--safe-b));z-index:40}
   <!-- 顶栏 -->
   <header id="topbar">
     <button id="btnGallery" class="ic-btn" title="我的作品" aria-label="我的作品"><svg class="ic" viewBox="0 0 24 24"><use href="#i-image"/></svg></button>
-    <div id="title">豆豆的画板</div>
+    <div id="title" title="豆豆的画板">豆的画板</div>
     <div class="top-right">
       <button id="btnUndo" class="ic-btn" title="撤销" aria-label="撤销"><svg class="ic" viewBox="0 0 24 24"><use href="#i-undo"/></svg></button>
       <button id="btnRedo" class="ic-btn" title="重做" aria-label="重做"><svg class="ic" viewBox="0 0 24 24"><use href="#i-redo"/></svg></button>
@@ -451,6 +482,19 @@ body.fs .panel{bottom:calc(6px + var(--safe-b));z-index:40}
   <div class="page-body">
     <div id="galEmpty" class="empty">还没有作品哦～<br>画一张，按右上角「保存」吧！</div>
     <div id="galGrid" class="gal-grid"></div>
+  </div>
+</div>
+
+<!-- 作品大图预览 -->
+<div id="viewer" class="modal hidden">
+  <div class="viewer-card">
+    <div id="viewerImgWrap"><img id="viewerImg" alt="我的画"></div>
+    <div id="viewerDate"></div>
+    <div class="viewer-actions">
+      <button class="btn ghost" id="viewerClose">关闭</button>
+      <button class="btn ghost" id="viewerSave">💾 保存</button>
+      <button class="btn primary" id="viewerEdit">🖌️ 继续画</button>
+    </div>
   </div>
 </div>
 
@@ -1884,15 +1928,82 @@ function renderGallery() {
     div.appendChild(img);
     div.appendChild(date);
     div.appendChild(del);
-    div.addEventListener("click", () => openArtwork(it));
+    div.addEventListener("click", () => openViewer(it));
     grid.appendChild(div);
   });
 }
 
+// —— 作品大图预览 ——
+let viewingItem = null;
+function parseItems(it) {
+  try { return JSON.parse(it.items || "[]") || []; } catch (e) { return []; }
+}
+// 把保存的矢量数据重新画成一张图：缩略图缺失/损坏时兜底，保证点开一定看得见
+function renderItemsArt(items, cssW, cssH, scale) {
+  const w = Math.max(1, cssW), h = Math.max(1, cssH);
+  const cv = document.createElement("canvas");
+  cv.width = Math.max(1, Math.round(w * scale));
+  cv.height = Math.max(1, Math.round(h * scale));
+  const c = cv.getContext("2d");
+  c.setTransform(scale, 0, 0, scale, 0, 0);
+  c.fillStyle = "#ffffff";
+  c.fillRect(0, 0, w, h);
+  for (const one of items) { try { renderItem(c, one); } catch (e) { /* 单个元素画坏不影响整张 */ } }
+  return cv;
+}
+function openViewer(it) {
+  viewingItem = it;
+  const items = parseItems(it);
+  let src = it.thumb || "";
+  if (!src && items.length) {
+    try { src = renderItemsArt(items, W, H, 1).toDataURL("image/jpeg", 0.8); } catch (e) { src = ""; }
+  }
+  const img = $("viewerImg");
+  img.onerror = () => {
+    img.onerror = null;
+    if (items.length) { try { img.src = renderItemsArt(items, W, H, 1).toDataURL("image/png"); } catch (e) {} }
+  };
+  img.src = src;
+  $("viewerDate").textContent = it.date || "";
+  $("viewerEdit").style.display = items.length ? "" : "none";
+  $("viewer").classList.remove("hidden");
+}
+function closeViewer() { $("viewer").classList.add("hidden"); viewingItem = null; }
+$("viewerClose").addEventListener("click", closeViewer);
+$("viewer").addEventListener("click", e => { if (e.target.id === "viewer") closeViewer(); });
+$("viewerEdit").addEventListener("click", () => {
+  const it = viewingItem;
+  if (!it) return;
+  closeViewer();
+  continueArtwork(it);
+});
+$("viewerSave").addEventListener("click", () => {
+  const it = viewingItem;
+  if (!it) return;
+  const items = parseItems(it);
+  let url = it.thumb || "";
+  if (items.length) { try { url = renderItemsArt(items, W, H, 2).toDataURL("image/png"); } catch (e) { /* 退回缩略图 */ } }
+  if (!url) { toast("这张画存不出来了 😢"); return; }
+  try {
+    const a = document.createElement("a");
+    a.href = url;
+    a.rel = "noopener";
+    if ("download" in a) {
+      a.download = `豆豆的画板_${it.date || todayStr()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => a.remove(), 500);
+      toast("存到相册啦 📷");
+    } else {
+      const w = window.open(url, "_blank");
+      if (!w) toast("长按图片可以保存到相册哦");
+    }
+  } catch (err) { toast("保存失败，请再试一次"); }
+});
+
 // 打开作品继续编辑
-function openArtwork(it) {
-  let items = [];
-  try { items = JSON.parse(it.items || "[]"); } catch (e) { items = []; }
+function continueArtwork(it) {
+  const items = parseItems(it);
   if (!items.length) { toast("这张画只能看，不能再改啦"); return; }
   confirmDialog("要继续画这张吗？", "继续画", "🖌️", () => {
     state.items = items;
