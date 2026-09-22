@@ -74,6 +74,52 @@ function json(data, status = 200) {
   });
 }
 
+// 清掉零宽字符和空白，拿到真正可见的内容
+function cleanReply(s) {
+  return String(s || "").replace(/[\u200b-\u200f\u2028\u2029\ufeff]/g, "").trim();
+}
+
+// 内容体检：推理型模型偶尔会把「思考过程」写进正文，或者干脆什么都不说。
+// 这种东西绝不能给小朋友看，必须判为无效，让它走重试 / 降级。
+const META = /需要回答|我需要|我们需要|让我(先)?分析|分析过程|思考过程|推理过程|根据要求|按照要求|用户|示例|^分析/;
+function saneReply(s) {
+  const t = cleanReply(s);
+  if (!t) return "";
+  if (META.test(t)) return "";
+  const han = (t.match(/[\u4e00-\u9fa5]/g) || []).length;
+  const pict = /[\u{1F300}-\u{1FAFF}\u2600-\u27BF]/u.test(t);
+  return (han >= 2 || pict) ? t : "";
+}
+
+// 「别啰嗦」提醒，用于重试
+function withNudge(messages) {
+  const m = JSON.parse(JSON.stringify(messages));
+  const last = m[m.length - 1];
+  const extra = "重要：只输出给小朋友看的那句话本身，不要写任何分析、过程、思路或理由。";
+  if (!last) return m;
+  if (typeof last.content === "string") last.content = last.content + "\n" + extra;
+  else if (Array.isArray(last.content)) last.content.push({ type: "text", text: extra });
+  return m;
+}
+
+// 调一次并体检结果
+async function askOnce(env, model, messages, timeoutMs) {
+  const r = await callDeepSeek(env, model, messages, timeoutMs, 1200);
+  if (!r.ok) return r;
+  const t = saneReply(r.review);
+  if (!t) return { ok: false, status: 502, err: "no_content" };
+  return { ok: true, review: t };
+}
+
+// 正文被判无效时，加一句「别啰嗦」再试一次；仍然不行才算失败
+async function generate(env, model, messages, timeoutMs) {
+  let r = await askOnce(env, model, messages, timeoutMs);
+  if (!r.ok && r.err === "no_content") {
+    r = await askOnce(env, model, withNudge(messages), timeoutMs);
+  }
+  return r;
+}
+
 // 限制长度：超过就在最近的句末标点处断开，避免把话截一半
 function trimLen(s, max) {
   const t = String(s || "").trim();
@@ -118,7 +164,8 @@ async function callDeepSeek(env, model, messages, timeoutMs, maxTokens) {
     }
     const data = await resp.json();
     const msg = data && data.choices && data.choices[0] ? data.choices[0].message : null;
-    const review = msg ? String(msg.content || msg.reasoning_content || "").trim() : "";
+    // 只用正文 content：推理模型的 reasoning_content 是思考过程，绝不能给小朋友看
+    const review = msg ? String(msg.content || "").trim() : "";
     if (review) return { ok: true, review: review };
     // 拿不到正文时把原始返回带回去，方便定位
     let raw = "";
@@ -169,7 +216,7 @@ export async function onRequestPost(context) {
 
   // 档 1：看图
   if (image) {
-    const r = await callDeepSeek(env, VISION_MODEL, [
+    const r = await generate(env, VISION_MODEL, [
       { role: "system", content: SYSTEM_PROMPT },
       {
         role: "user",
@@ -178,7 +225,7 @@ export async function onRequestPost(context) {
           { type: "image_url", image_url: { url: "data:image/jpeg;base64," + image, detail: "auto" } }
         ]
       }
-    ], 28000, 1200);
+    ], 28000);
     if (r.ok) return done(r.review);
     visionErr = (r.status || "?") + " " + (r.err || "");
   }
@@ -187,7 +234,7 @@ export async function onRequestPost(context) {
   const userText = image
     ? "看不到图，这是画面的元素清单（仅供参考，请用想象力补全）：" + (desc || "（无）") + "\n" + order
     : "这是画面的元素清单：" + desc + "\n" + order;
-  const r2 = await callDeepSeek(env, TEXT_MODEL, [
+  const r2 = await generate(env, TEXT_MODEL, [
     { role: "system", content: SYSTEM_PROMPT },
     { role: "user", content: userText }
   ], 25000);
