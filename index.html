@@ -236,10 +236,24 @@ button{font-family:inherit;color:inherit;border:none;background:none;padding:0;c
 .sprite-emoji{font-size:44px;line-height:1;animation:spriteWiggle 1.2s ease-in-out infinite}
 @keyframes spriteWiggle{0%,100%{transform:rotate(-8deg)}50%{transform:rotate(8deg)}}
 #spriteText{
-  margin:12px 0 16px;padding:14px;min-height:88px;border-radius:18px;background:#fdf3ff;
-  font-size:16.5px;font-weight:700;line-height:1.65;color:var(--ink);text-align:left;
+  margin:12px 0 14px;padding:14px;min-height:76px;border-radius:18px;background:#fdf3ff;
+  font-size:17px;font-weight:800;line-height:1.65;color:var(--ink);text-align:center;
 }
-#spriteText.loading{color:var(--ink-soft);text-align:center;display:flex;align-items:center;justify-content:center}
+#spriteText.loading{color:var(--ink-soft);display:flex;align-items:center;justify-content:center}
+#spriteText.cheer{animation:pop .3s ease-out}
+/* 猜完之后的「猜对啦 / 猜错啦」互动区 */
+.sprite-tip{font-size:13px;font-weight:800;color:var(--ink-soft);text-align:center;margin-bottom:8px}
+.sprite-row{display:flex;gap:8px;margin-bottom:14px}
+.guess-btn{flex:1;height:50px;font-size:15px;border-radius:16px;color:#fff}
+#spriteRight{background:linear-gradient(135deg,#8fe3a8,#4cc86b)}
+#spriteWrong{background:linear-gradient(135deg,#ffd36e,#ffa63d)}
+.tell-btn{flex:0 0 88px;height:50px;font-size:15px;border-radius:16px;color:#fff;
+  background:linear-gradient(135deg,#c86bff,#ff9ede)}
+#spriteAnswer{
+  flex:1;min-width:0;height:50px;border:0;border-radius:16px;background:#f4f0fa;
+  padding:0 14px;font-size:16px;font-family:inherit;color:var(--ink);
+}
+#spriteAnswer::placeholder{color:#bdaed0}
 
 /* 我的作品页 */
 .page{position:fixed;inset:0;background:linear-gradient(180deg,var(--bg),#fdf3ff);z-index:70;display:flex;flex-direction:column;touch-action:pan-y}
@@ -517,14 +531,27 @@ body.fs .panel{bottom:calc(6px + var(--safe-b));z-index:40}
 
 <!-- 小精灵点评：常驻顶栏的小图标（画布有内容即显示） -->
 
-<!-- 小精灵点评弹窗 -->
+<!-- 小精灵弹窗：猜猜小朋友画的是什么，猜完还能继续互动 -->
 <div id="spriteModal" class="modal hidden">
   <div class="card">
     <div class="sprite-emoji">🧚</div>
-    <div class="card-title">小精灵亮晶晶</div>
-    <div id="spriteText" class="loading">亮晶晶正扇着小翅膀飞过来看画…</div>
+    <div class="card-title">亮晶晶猜猜看</div>
+    <div id="spriteText" class="loading">亮晶晶正眨着大眼睛看画…</div>
+    <div id="spriteAsk" class="hidden">
+      <div class="sprite-tip">我猜对了吗？</div>
+      <div class="sprite-row">
+        <button class="btn guess-btn" id="spriteRight">😊 猜对啦</button>
+        <button class="btn guess-btn" id="spriteWrong">😂 猜错啦</button>
+      </div>
+    </div>
+    <div id="spriteTell" class="hidden">
+      <div class="sprite-tip">哎呀我猜不出来啦，你悄悄告诉我吧～</div>
+      <div class="sprite-row">
+        <input id="spriteAnswer" type="text" maxlength="20" placeholder="我画的是…" autocomplete="off">
+        <button class="btn tell-btn" id="spriteSend">告诉它</button>
+      </div>
+    </div>
     <div class="card-actions">
-      <button class="btn ghost" id="spriteAgain">再听一遍</button>
       <button class="btn primary" id="spriteOk">好嘞</button>
     </div>
   </div>
@@ -2206,19 +2233,6 @@ function describeArtwork() {
   };
 }
 
-// 断网 / 接口不可用时的本地夸夸（也用真实画面内容，不敷衍）
-function localPraise(info) {
-  const thing = info.stickers[0] || "这幅画";
-  const thing2 = info.stickers[1] || info.stickers[0] || "小画家";
-  const color = info.colors[0] || "彩虹色";
-  const pool = [
-    `哇——${thing}！它正在画里咕噜咕噜冒着彩色泡泡开派对呢～豆豆的${color}用得太好看啦，${thing}悄悄告诉我，它最最最喜欢你哦！🌈✨ 你说，它今晚会不会梦见你呀？`,
-    `天呐！${thing}和${thing2}在画里手拉手转圈圈，嘚嘚嘚，转得我都晕啦！豆豆选的颜色像糖果一样甜～🍭 你猜它们转完圈要去哪里冒险？`,
-    `哇塞，${thing}从画里探出小脑袋跟我打招呼啦！它说豆豆是世界上最会画画的小魔法师，噼里啪啦变出这么多好看的颜色！🪄 下次能不能给它画个小伙伴呀？`
-  ];
-  return pool[Math.floor(Math.random() * pool.length)];
-}
-
 // —— 常驻入口按钮：画布上有内容就一直在，清空或撤销到空白时才消失 ——
 function updateSpriteBtn() {
   $("spriteBtn").classList.toggle("hidden", !hasArtwork());
@@ -2232,11 +2246,15 @@ function hasArtwork() {
   return false;
 }
 
-// —— 点评弹窗 ——
-let spriteInfo = null;      // 当前画作的描述信息
-let spriteLastText = "";    // 最近一次点评（供朗读 / 重听）
+// —— 小精灵弹窗：猜猜小朋友画的是什么，猜完还能继续互动 ——
+let spriteInfo = null;      // 当前画作的信息与图片
+let spriteLastGuess = "";   // 上一次猜的内容（再猜时告诉模型别重复）
+let spriteGuessN = 0;       // 已经猜了几次
+let spriteLastText = "";    // 最近一次说出来的话
 let typeTimer = null;
 let spriteFetchCtrl = null;
+let spriteBusy = false;     // 请求进行中 → 屏蔽按钮，防止小朋友连点烧 API
+const MAX_GUESS = 3;        // 猜满 3 次就让小朋友公布答案
 
 function openSpriteModal() {
   const info = describeArtwork();
@@ -2250,36 +2268,46 @@ function openSpriteModal() {
     image: img,
     key: (img ? hash32(img) : "noimg") + "|" + info.text   // 画面变了 key 就变
   };
+  spriteLastGuess = "";
+  spriteGuessN = 0;
+  $("spriteAnswer").value = "";
   $("spriteModal").classList.remove("hidden");
-  requestSpriteReview(false);
+  spriteGuess(false);
 }
 function closeSpriteModal() {
   $("spriteModal").classList.add("hidden");
   stopSpriteWork();
+  spriteBusy = false;
 }
 function stopSpriteWork() {
   clearInterval(typeTimer);
   if (spriteFetchCtrl) { try { spriteFetchCtrl.abort(); } catch (e) {} spriteFetchCtrl = null; }
 }
+function hideInteract() {
+  $("spriteAsk").classList.add("hidden");
+  $("spriteTell").classList.add("hidden");
+}
 
-// 打字机效果把点评写出来
-function typewriteSprite(text) {
+// 打字机效果（按字符而非字节切，避免把 emoji 截成半个）
+function typewriteSprite(text, onDone) {
   clearInterval(typeTimer);
   spriteLastText = text;
   const box = $("spriteText");
-  box.classList.remove("loading");
+  box.classList.remove("loading", "cheer");
+  const chars = [...text];
   box.textContent = "";
   let i = 0;
   typeTimer = setInterval(() => {
     i++;
-    box.textContent = text.slice(0, i);
-    if (i >= text.length) {
+    box.textContent = chars.slice(0, i).join("");
+    if (i >= chars.length) {
       clearInterval(typeTimer);
+      if (onDone) onDone();
     }
   }, 45);
 }
 
-// —— 点评缓存：同一幅画（描述相同）只调一次大模型，重复打开直接读缓存 ——
+// —— 缓存：同一幅画的「第一次猜测」只调一次大模型，重复打开直接秒出 ——
 const LS_SPRITE = "kd_sprite_review_v1";
 function readSpriteCache() {
   try { return JSON.parse(localStorage.getItem(LS_SPRITE) || "null"); } catch (e) { return null; }
@@ -2294,54 +2322,121 @@ function hash32(s) {
   return h.toString(16) + "-" + s.length;
 }
 
-// 请求 AI 点评；force=false 且画面没变时直接用缓存，不调用大模型
-// 任何失败都降级为本地夸夸（本地夸夸不写缓存，下次联网还能拿到 AI 版），绝不冷场
-async function requestSpriteReview(force) {
+const WAIT_TEXT = {
+  guess: "亮晶晶正眨着大眼睛看画…",
+  wrong: "嗯……让我再看看！",
+  right: "耶——！",
+  reveal: "哇——原来是这样呀！"
+};
+
+// 统一的 AI 对话入口：mode = guess / wrong / right / reveal
+// 任何失败都降级为本地兜底，绝不冷场、绝不弹错误给小朋友
+async function spriteSay(mode, answer) {
+  if (spriteBusy) return;
+  spriteBusy = true;
   stopSpriteWork();
-  const cache = readSpriteCache();
-  if (!force && cache && cache.key === spriteInfo.key && cache.review) {
-    typewriteSprite(cache.review);   // 缓存命中：秒出，零 API 调用
-    return;
-  }
+  hideInteract();
   const box = $("spriteText");
   box.classList.add("loading");
-  box.textContent = "亮晶晶正扇着小翅膀飞过来看画…";
+  box.classList.remove("cheer");
+  box.textContent = WAIT_TEXT[mode] || "亮晶晶正在想…";
   try {
     spriteFetchCtrl = new AbortController();
     const timer = setTimeout(() => spriteFetchCtrl.abort(), 25000);
     const resp = await fetch("/api/review", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ description: spriteInfo.text, image: spriteInfo.image }),
+      body: JSON.stringify({
+        mode: mode,
+        description: spriteInfo.text,
+        image: spriteInfo.image,
+        prev: spriteLastGuess,
+        answer: answer || ""
+      }),
       signal: spriteFetchCtrl.signal
     });
     clearTimeout(timer);
     if (!resp.ok) throw new Error("http_" + resp.status);
     const data = await resp.json();
     if (!data || !data.review) throw new Error("empty");
-    const review = String(data.review);
-    writeSpriteCache(spriteInfo.key, review);   // 只缓存 AI 成功结果
-    typewriteSprite(review);
+    const text = [...String(data.review)].slice(0, 60).join("");
+    if (mode === "guess" || mode === "wrong") {
+      spriteLastGuess = text;
+      writeSpriteCache(spriteInfo.key, text);   // 只缓存「猜」的结果
+    }
+    typewriteSprite(text, () => afterSay(mode));
   } catch (e) {
-    typewriteSprite(localPraise(spriteInfo));
+    typewriteSprite(localSay(mode, answer), () => afterSay(mode));
   } finally {
     spriteFetchCtrl = null;
+    spriteBusy = false;
   }
 }
 
-$("spriteBtn").addEventListener("click", openSpriteModal);
-$("spriteOk").addEventListener("click", closeSpriteModal);
-// 「再听一遍」= 强制生成新点评，但 10 秒内连点不重复调用（防小朋友刷按钮烧 API）
-let spriteAgainAt = 0;
-$("spriteAgain").addEventListener("click", () => {
-  const now = Date.now();
-  if (now - spriteAgainAt < 10000) {
-    toast("亮晶晶还在想，等一小下～");
-    return;
+// 第一轮：画面没变且缓存里有就直接读缓存，零 API 调用
+function spriteGuess(force) {
+  if (!force) {
+    const cache = readSpriteCache();
+    if (cache && cache.key === spriteInfo.key && cache.review) {
+      stopSpriteWork();
+      hideInteract();
+      spriteLastGuess = cache.review;
+      spriteLastText = cache.review;
+      const box = $("spriteText");
+      box.classList.remove("loading", "cheer");
+      box.textContent = cache.review;   // 缓存命中直接整句显示，不用再等打字机
+      afterSay("guess");
+      return;
+    }
   }
-  spriteAgainAt = now;
-  requestSpriteReview(true);
-});
+  spriteSay("guess", "");
+}
+
+// 一句话说完之后：决定下面该出现什么
+function afterSay(mode) {
+  hideInteract();
+  if (mode === "guess" || mode === "wrong") {
+    spriteGuessN++;
+    if (spriteGuessN >= MAX_GUESS) $("spriteTell").classList.remove("hidden");
+    else $("spriteAsk").classList.remove("hidden");
+  } else {
+    const box = $("spriteText");
+    box.classList.remove("cheer");
+    void box.offsetWidth;      // 强制重排，让动画能重复触发
+    box.classList.add("cheer");
+  }
+}
+
+// 断网 / 没配 Key / 接口异常时的本地兜底（也尽量用真实画面内容）
+function localSay(mode, answer) {
+  const info = spriteInfo || { stickers: [], colors: [] };
+  if (mode === "right") return "耶！我猜对啦，豆豆画得最最棒！🎉";
+  if (mode === "reveal") return "哇！原来是" + (answer || "这个") + "！豆豆教教我好不好？✨";
+  if (mode === "wrong") {
+    const pool = [
+      "嗯……让我再看看！我猜是一只飞飞的小鸟！🐦",
+      "哎呀，那我再猜——是一朵彩虹色的花！🌸",
+      "再猜一次！我猜是一辆要出发的小汽车！🚗"
+    ].filter(s => s !== spriteLastGuess);
+    return pool[Math.floor(Math.random() * pool.length)] || "我再看看哦——我猜是一颗小星星！⭐";
+  }
+  if (info.stickers && info.stickers[0]) return "我猜这是一个" + info.stickers[0] + "！✨";
+  if (info.colors && info.colors[0]) return "我猜是一片" + info.colors[0] + "的云朵！☁️";
+  return "我猜这是一个大大的太阳！☀️";
+}
+
+$("spriteBtn").addEventListener("click", () => { if (!spriteBusy) openSpriteModal(); });
+$("spriteOk").addEventListener("click", closeSpriteModal);
+$("spriteRight").addEventListener("click", () => spriteSay("right", ""));
+$("spriteWrong").addEventListener("click", () => spriteSay("wrong", ""));
+$("spriteSend").addEventListener("click", sendSpriteAnswer);
+$("spriteAnswer").addEventListener("keydown", e => { if (e.key === "Enter") sendSpriteAnswer(); });
+function sendSpriteAnswer() {
+  const v = ($("spriteAnswer").value || "").trim();
+  if (!v) { toast("悄悄告诉亮晶晶，你画的是什么呀～"); return; }
+  $("spriteAnswer").blur();
+  spriteSay("reveal", v);
+}
 $("spriteModal").addEventListener("click", e => { if (e.target.id === "spriteModal") closeSpriteModal(); });
 
 init();

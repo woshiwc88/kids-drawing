@@ -1,48 +1,93 @@
-// 豆豆的画板 · 小精灵点评接口
-// POST /api/review  Body: { "image": "<jpg base64>", "description": "画面元素清单（可选）" }
-// 返回：{ "review": "……", "via": "vision" | "text" }
+// 豆豆的画板 · 小精灵「猜猜我画的什么」接口
+// POST /api/review
+//   Body: { mode, image, description, prev, answer }
+//     mode = "guess"  (默认) 猜画面是什么        —— ≤2 句、≤40 汉字
+//     mode = "right"  小朋友说猜对了            —— ≤2 句、≤25 汉字
+//     mode = "wrong"  小朋友说猜错了，再猜一次   —— ≤2 句、≤40 汉字，不得重复 prev
+//     mode = "reveal" 小朋友公布答案            —— ≤2 句、≤30 汉字
+//   返回：{ review, via: "vision" | "text", mode }
 //
 // 两档：
-//   1. 有图 → deepseek-v4-flash-vision-exp 直接看画说话
-//   2. 无图 / 视觉模型不可用 → deepseek-chat 根据画面清单说话
+//   1. 有图 → deepseek-v4-flash-vision-exp 直接看图
+//   2. 无图 / 视觉模型不可用 → deepseek-chat 根据画面清单来
 // DeepSeek API Key 通过 Cloudflare Pages 环境变量注入（DEEPSEEK_API_KEY），
-// 绝不出现在代码、仓库和浏览器里。Key 未配置时返回 503，前端自动降级为本地夸夸。
+// 绝不出现在代码、仓库和浏览器里。Key 未配置时返回 503，前端自动降级为本地兜底文案。
 
 const DEEPSEEK_URL = "https://api.deepseek.com/chat/completions";
 const VISION_MODEL = "deepseek-v4-flash-vision-exp";   // 唯一支持图像的模型
 const TEXT_MODEL = "deepseek-chat";
 const MAX_IMAGE_B64 = 6 * 1024 * 1024;                 // base64 上限，超过就放弃看图走文字档
 
-// 小精灵人设：看着真实的画说话，迪士尼动画旁白式的温暖与俏皮。
-const SYSTEM_PROMPT = [
-  "你是一只住在彩虹云朵上的小精灵，叫「亮晶晶」，最喜欢趴在云朵边看小朋友画画。",
-  "现在你面前是 6 岁小女孩豆豆刚画的一幅画。",
-  "",
-  "【第一步：先真的看清楚】",
-  "仔细看图片里究竟有什么：有哪些东西、什么形状、什么颜色、在画面的哪个位置。",
-  "只说你真正看到的东西——绝不假设、绝不套模板、绝不默认画面里有小马或任何固定角色。",
-  "如果画面很简单（比如只有几笔涂鸦），就夸这几笔本身：它的颜色、它的力气、它像什么。",
-  "",
-  "【第二步：像迪士尼动画的旁白那样说话】",
-  "1. 从画里真实存在的 1~2 个细节出发，编一个小小的魔法瞬间：让画里的东西活过来一两句话。",
-  "2. 夸要夸得具体、真诚，像发现了一件了不得的宝贝（某一处颜色搭配、某个出人意料的组合、某个可爱的小细节）。绝不提缺点。",
-  "3. 可以自然地带一点拟声词（咻——、叮铃、咕噜噜），别堆砌。",
-  "4. 结尾留一个轻轻的互动：一个天真的小问题，或一个小邀请。",
-  "",
-  "【变化要求——非常重要】",
-  "5. 每次都换一个开场（惊叹、悄悄话、小提问、屏住呼吸……随机选），换一个观察角度，换一个结尾形式；禁止重复最近一次用过的开场词和句式。",
-  "6. 句式长短错落，像讲故事一样有呼吸感，不要「首先/然后/最后」，不要分点。",
-  "",
-  "【硬性规则】",
-  "7. 全文 60~110 个汉字，口语化、软萌但有画面感。",
-  "8. emoji 用 0~3 个，可不用；禁止英文、说教、恐怖、广告、网络烂梗。"
+// —— 猜画的规则（来自产品需求，四条模式共用）——
+const GUESS_RULES = [
+  "1. 直接说出你猜测的内容，例如：“我猜这是一个小兔子！”",
+  "2. 如果画面不明确，可以说“我猜可能是……”并给出一个有趣的猜测",
+  "3. 最多回答 2 句话",
+  "4. 最多 40 个汉字",
+  "5. 不要展示或解释你的分析过程",
+  "6. 不要使用专业术语",
+  "7. 不要长篇描述画面",
+  "8. 语气要像一个亲切、活泼的小朋友伙伴",
+  "9. 即使不确定，也要大胆猜一个，不要只回答“看不出来”",
+  "10. 可以根据画面的颜色、形状和简单特征进行合理猜测",
+  "11. 不要编造画面中明显不存在的大量细节"
 ].join("\n");
+
+const ROLE = [
+  "你是一个陪小朋友画画的小伙伴，名字叫「亮晶晶」。",
+  "请仔细观察小朋友画的画，猜猜小朋友画的是什么，用非常简单、可爱、有趣的语言回答。"
+].join("\n");
+
+const SYSTEM_GUESS = ROLE + "\n\n要求：\n" + GUESS_RULES +
+  "\n12. 回答要让小朋友觉得有趣、有参与感" +
+  "\n\n示例：\n- “我猜这是一个可爱的小兔子！🐰”\n- “我猜你画的是一只正在飞的小鸟！🐦”" +
+  "\n- “嗯……我猜这是一个大大的太阳！☀️”\n- “我猜可能是一辆小汽车，它要出发啦！🚗”";
+
+const SYSTEM_RIGHT = [
+  ROLE,
+  "小朋友刚刚告诉你：「猜对啦！」",
+  "请兴奋地庆祝一下：像小伙伴击掌那样开心，顺带夸一句画里真实存在的某个细节（颜色、形状、某个小地方）。",
+  "硬性要求：最多 2 句话、最多 25 个汉字，可带 1~2 个 emoji，不说教、不啰嗦。"
+].join("\n");
+
+const SYSTEM_WRONG = [
+  ROLE,
+  "你刚才猜的内容被小朋友否定了（不要再说这个答案了）。",
+  "请重新看这幅画，换一个完全不同的猜测再说一次。",
+  "硬性要求：最多 2 句话、最多 40 个汉字，可以先说“嗯……让我再看看！”、“哎呀，那我再猜一次！”之类。",
+  "同样必须大胆猜一个，不许说“我猜不出来”。"
+].join("\n");
+
+const SYSTEM_REVEAL = [
+  ROLE,
+  "小朋友公布了答案，请像小伙伴一样惊喜地回应：原来是这样！然后夸一句画里和这个答案对应的地方，或者说想让 TA 教自己画。",
+  "硬性要求：最多 2 句话、最多 30 个汉字，可带 1~2 个 emoji，不说教、不打击。"
+].join("\n");
+
+// 每种模式的字数上限（汉字/字符），超出就在句末标点处截断，保证界面上一定不长
+const LIMITS = { guess: 40, wrong: 40, right: 25, reveal: 30 };
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: { "Content-Type": "application/json; charset=utf-8" }
   });
+}
+
+// 限制长度：超过就在最近的句末标点处断开，避免把话截一半
+function trimLen(s, max) {
+  const t = String(s || "").trim();
+  const chars = [...t];
+  if (chars.length <= max) return t;
+  let cut = chars.slice(0, max).join("");
+  const punct = "。！？!?～~…";
+  const idx = Math.max(
+    cut.lastIndexOf("。"), cut.lastIndexOf("！"), cut.lastIndexOf("？"),
+    cut.lastIndexOf("!"), cut.lastIndexOf("?"), cut.lastIndexOf("～"), cut.lastIndexOf("…")
+  );
+  if (idx >= Math.floor(max * 0.5)) cut = cut.slice(0, idx + 1);
+  else cut = cut + "…";
+  return cut;
 }
 
 // 调 DeepSeek（OpenAI 兼容格式），messages 透传
@@ -60,8 +105,9 @@ async function callDeepSeek(env, model, messages, timeoutMs, maxTokens) {
       body: JSON.stringify({
         model: model,
         messages: messages,
-        temperature: 1.2,
-        max_tokens: maxTokens || 320,
+        temperature: 1.0,
+        // 视觉模型是推理型的，思考过程会吃掉预算，token 给少了正文会返回空
+        max_tokens: maxTokens || 1200,
         stream: false
       })
     });
@@ -88,44 +134,66 @@ async function callDeepSeek(env, model, messages, timeoutMs, maxTokens) {
 export async function onRequestPost(context) {
   const { request, env } = context;
 
-  let desc = "", image = "";
+  let desc = "", image = "", prev = "", answer = "", mode = "guess";
   try {
     const body = await request.json();
     desc = String((body && body.description) || "").slice(0, 1200).trim();
     image = String((body && body.image) || "").trim();
     if (image.length > MAX_IMAGE_B64) image = "";   // 太大就放弃看图，走文字档
+    prev = String((body && body.prev) || "").slice(0, 120).trim();
+    answer = String((body && body.answer) || "").slice(0, 40).trim();
+    const m = String((body && body.mode) || "guess");
+    if (m === "right" || m === "wrong" || m === "reveal") mode = m;
   } catch (e) {
     return json({ error: "bad_request" }, 400);
   }
   if (!desc && !image) return json({ error: "empty" }, 400);
   if (!env.DEEPSEEK_API_KEY) return json({ error: "no_api_key" }, 503);
+  if (mode === "wrong" && !image && !desc) return json({ error: "empty" }, 400);
+
+  const SYSTEM_PROMPT =
+    mode === "right" ? SYSTEM_RIGHT :
+    mode === "wrong" ? SYSTEM_WRONG :
+    mode === "reveal" ? SYSTEM_REVEAL : SYSTEM_GUESS;
+
+  // 用户说的那句话
+  let order = "";
+  if (mode === "guess") order = "请看这幅画，猜一猜小朋友画的是什么：";
+  else if (mode === "wrong") order = prev ? "你刚才猜的是“" + prev + "”，小朋友说猜错了。请重新猜一个：" : "小朋友说你猜错了，请重新猜一个：";
+  else if (mode === "reveal") order = "小朋友说，TA 画的是“" + (answer || "一个秘密") + "”。请回应：";
+  else order = prev ? "你猜的是“" + prev + "”，小朋友说猜对啦！请回应：" : "小朋友说你猜对啦！请回应：";
+
+  const limit = LIMITS[mode] || 40;
+  const done = review => json({ review: trimLen(review, limit), via: "vision", mode: mode });
   let visionErr = "";
 
-  // 档 1：看图说话
+  // 档 1：看图
   if (image) {
     const r = await callDeepSeek(env, VISION_MODEL, [
       { role: "system", content: SYSTEM_PROMPT },
       {
         role: "user",
         content: [
-          { type: "text", text: "这是豆豆的画，请看图说一段话：" },
+          { type: "text", text: order },
           { type: "image_url", image_url: { url: "data:image/jpeg;base64," + image, detail: "auto" } }
         ]
       }
     ], 28000, 1200);
-    if (r.ok) return json({ review: r.review.slice(0, 600), via: "vision" });
+    if (r.ok) return done(r.review);
     visionErr = (r.status || "?") + " " + (r.err || "");
   }
 
   // 档 2：没图或视觉模型不可用 → 文字档，用画面清单兜底
   const userText = image
-    ? "看不到图，这是画面的元素清单（仅供参考，请用想象力补全）：" + (desc || "（无）")
-    : "这是画面的元素清单：" + desc;
+    ? "看不到图，这是画面的元素清单（仅供参考，请用想象力补全）：" + (desc || "（无）") + "\n" + order
+    : "这是画面的元素清单：" + desc + "\n" + order;
   const r2 = await callDeepSeek(env, TEXT_MODEL, [
     { role: "system", content: SYSTEM_PROMPT },
     { role: "user", content: userText }
   ], 25000);
-  if (r2.ok) return json({ review: r2.review.slice(0, 600), via: "text", vision_error: visionErr || null });
+  if (r2.ok) {
+    return json({ review: trimLen(r2.review, limit), via: "text", mode: mode, vision_error: visionErr || null });
+  }
 
   return json({ error: "upstream_" + (r2.status || 502) }, 502);
 }
