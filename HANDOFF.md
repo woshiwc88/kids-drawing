@@ -47,11 +47,12 @@ python3 -c "import glob,os;[os.unlink(p) for p in glob.glob('.git/**/*.lock',rec
 
 小精灵点评额外需要：Cloudflare Pages 项目 → Settings → Environment variables → 添加 `DEEPSEEK_API_KEY`（Production，类型 Secret），改完要重新部署一次才生效。没配 Key 时功能自动降级为本地夸夸，不影响其他一切。
 
-交互流程：点顶栏 ✨ → 亮晶晶猜画 → 出现「😊 猜对啦 / 😂 猜错啦」。猜对 → 庆祝语并撒花；猜错 → 换一个完全不同的猜测（最多 3 次），第 3 次还猜错就出现输入框让小朋友公布答案 → 惊喜回应。**曾经的「再听一遍」按钮已删除**（小孩老是无意识连点，白白烧 API），现在唯一的重新生成入口是画面内容发生变化。防连点由 `spriteBusy` 请求锁保证。
+交互流程：点顶栏 ✨ → 亮晶晶猜一次 → 出现「😊 猜对啦 / 😂 猜错啦」。猜对 → 庆祝语并撒花；**猜错 → 不再重复猜**，前端就地认输（本地随机一句俏皮话，零 API、零等待），同时弹出输入框请小朋友公布答案 → 惊喜回应。**「再听一遍」按钮已删除**（小孩老是无意识连点，白白烧 API），现在唯一的重新生成入口是画面内容发生变化。防连点由 `spriteBusy` 请求锁保证。
+猜错这条分支**不进网络**：`spriteGiveUp()` → `giveUpLine()` → 打字机 → `afterSay("giveup")` → 显示 `#spriteTell`。服务端已无 `mode="wrong"`（连同 `SYSTEM_WRONG`、`LIMITS.wrong` 一并删除），别再加回来浪费 token。
 
 点评链路三档，从上往下兜底：① 图片 → `deepseek-v4-flash-vision-exp` 看图说话（**唯一支持图像的 DeepSeek 模型**，其他模型传图会 400）；② 视觉档失败 → `deepseek-chat` 依据画面元素清单说话；③ 都失败或断网 → 前端本地兜底文案。返回体里的 `via` 字段标明走了哪一档，排查时先看它。视觉档首次调用可能十几秒，正常约 5 秒。
 
-**视觉模型是推理型模型**：`max_tokens` 至少给 1200，给小了（比如 320）思考过程会把预算吃光、正文返回空字符串。字数控制在服务端用 `trimLen()` 兜底（guess/wrong 40 字、right 25 字、reveal 30 字），前端再截一次到 60 字符。
+**视觉模型是推理型模型**：`max_tokens` 至少给 1200，给小了（比如 320）思考过程会把预算吃光、正文返回空字符串。字数控制在服务端用 `trimLen()` 兜底（guess 40 字、right 25 字、reveal 30 字），前端再截一次到 60 字符。
 
 ## 四、代码结构
 
@@ -60,7 +61,7 @@ python3 -c "import glob,os;[os.unlink(p) for p in glob.glob('.git/**/*.lock',rec
 | 文件 | 作用 |
 | --- | --- |
 | `index.html` | 全部逻辑，2227 行。HTML + CSS + JS 都在里面，含自绘 SVG 图标雪碧图 |
-| `functions/api/review.js` | 小精灵接口（Cloudflare Pages Function）。四种 `mode`：`guess` 猜画的是什么（≤2 句、≤40 汉字）/ `wrong` 换一个猜测（不得重复上一次）/ `right` 猜对后的庆祝 / `reveal` 小朋友公布答案后的惊喜回应。有图走 `deepseek-v4-flash-vision-exp`，视觉不可用退 `deepseek-chat` |
+| `functions/api/review.js` | 小精灵接口（Cloudflare Pages Function）。三种 `mode`：`guess` 猜画的是什么（≤2 句、≤40 汉字）/ `right` 猜对后的庆祝 / `reveal` 小朋友公布答案后的惊喜回应（**`wrong` 已废弃删除**，猜错由前端本地认输）。有图走 `deepseek-v4-flash-vision-exp`，视觉不可用退 `deepseek-chat` |
 | `service-worker.js` | 离线缓存，`CACHE_NAME` 由 CI 自动改写，不要手改 |
 | `manifest.webmanifest` | PWA 安装信息 |
 | `icons/` | 192/512 PNG + SVG 图标 |
@@ -105,8 +106,8 @@ python3 -c "import glob,os;[os.unlink(p) for p in glob.glob('.git/**/*.lock',rec
 | — | `06f25b3` | 顶栏防溢出：标题缩为「豆的画板」+ 字号调小 + `min-width:0`，窄屏（≤400px / ≤340px）按钮自动收窄，**✨ 小精灵图标在 320/360/375/390/430px 宽度下均完整可见**；画廊点击改为「打开作品大图」（可看图 + 保存 + 继续画），缩略图缺失时用矢量数据现场重绘兜底 |
 | 最新 | `df180d5` | ✨ 图标时机：`updateSpriteBtn()` 补挂到 `pushHistory()`（画完一笔不重绘）与落笔瞬间；判空改 `hasArtwork()`（橡皮擦痕不算内容）；`#viewer` 提到 z-index 75 |
 | 最新 | `8eacd97`~ | 画廊点 ✕ 删不掉：`#modal` 提到 z-index 78，层级定为 **预览 75 < 确认框 78 < toast 80** |
-| — | （本次） | 小精灵改为「猜猜我画的什么」：用新提示词严格限 2 句 / 40 汉字；**去掉「再听一遍」**；新增 😊猜对啦 / 😂猜错啦 互动——猜对出庆祝语，猜错换一个猜测（最多 3 次），3 次后请小朋友公布答案并给惊喜回应；四种模式 `guess/wrong/right/reveal` |
-| 最新 | （本次） | ① ✨ 出现时机修正：`pushHistory()` 里补调 `updateSpriteBtn()`（此前只在 `redraw()` 里更新，而画完一笔走的是 pushHistory，**导致画完了图标还不出现**），手指按下即显示；判空改为 `hasArtwork()`——橡皮擦痕不算内容。② 修大图预览被画廊挡住：`.modal` 默认 z-index 60 < `.page` 70，预览藏在画廊背后看着像"没跳转"，给 `#viewer` 提到 75（仍低于 toast 80）。 |
+| — | （本次） | ① ✨ 出现时机修正：`pushHistory()` 里补调 `updateSpriteBtn()`（此前只在 `redraw()` 里更新，而画完一笔走的是 pushHistory，**导致画完了图标还不出现**），手指按下即显示；判空改为 `hasArtwork()`——橡皮擦痕不算内容。② 修大图预览被画廊挡住：`.modal` 默认 z-index 60 < `.page` 70，预览藏在画廊背后看着像"没跳转"，给 `#viewer` 提到 75（仍低于 toast 80）。 |
+| 最新 | `2fb7f8b` | **猜错不再重复猜**：点「😂 猜错啦」就地认输（`spriteGiveUp()` 走本地俏皮话，不请求大模型），立刻弹出输入框请小朋友公布答案；删除 `MAX_GUESS` 轮次机制，连同前端与服务端的 `mode="wrong"` 全链路（`SYSTEM_WRONG`、`LIMITS.wrong`、`prev` 去重）一起清掉。现在每次打开最多消耗 2 次 API（猜一次 + 猜对/公布答案各一次） |
 
 ## 八、待办 / 已知问题
 
