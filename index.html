@@ -313,8 +313,11 @@ body.fs .panel{bottom:calc(6px + var(--safe-b));z-index:40}
 }
 
 /* 作品大图预览 */
-/* 作品大图预览：必须压过「我的作品」页（.page z-index:70），否则弹窗会藏在画廊背后看不见 */
+/* 弹窗层级：.page（我的作品页）是 70，.modal 默认只有 60，
+   从画廊里弹出的确认框/大图预览会被整页盖住，看着像"点了没反应"。
+   所以：预览 75 < 确认框 78 < toast 80。改动这块务必用 elementFromPoint 复验层级。 */
 #viewer{z-index:75}
+#modal{z-index:78}
 .viewer-card{
   width:min(360px,92vw);background:#fff;border-radius:26px;padding:14px 14px 16px;
   text-align:center;box-shadow:0 16px 40px rgba(70,45,95,.28);animation:pop .18s ease-out;
