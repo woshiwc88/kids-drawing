@@ -102,9 +102,10 @@ function withNudge(messages) {
   return m;
 }
 
-// 调一次并体检结果
+// 视觉模型是推理型的，思考过程会吃掉预算：给少了正文来不及产出（content 返回空，
+// 实测 1200 仍会被截断），给到 2000 基本都能吐出正文。
 async function askOnce(env, model, messages, timeoutMs) {
-  const r = await callDeepSeek(env, model, messages, timeoutMs, 1200);
+  const r = await callDeepSeek(env, model, messages, timeoutMs, 2000);
   if (!r.ok) return r;
   const t = saneReply(r.review);
   if (!t) return { ok: false, status: 502, err: "no_content" };
@@ -152,8 +153,8 @@ async function callDeepSeek(env, model, messages, timeoutMs, maxTokens) {
         model: model,
         messages: messages,
         temperature: 1.0,
-        // 视觉模型是推理型的，思考过程会吃掉预算，token 给少了正文会返回空
-        max_tokens: maxTokens || 1200,
+        // 默认给足：推理模型的思考过程会占用这笔预算
+        max_tokens: maxTokens || 2000,
         stream: false
       })
     });
