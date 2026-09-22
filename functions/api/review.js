@@ -3,7 +3,6 @@
 //   Body: { mode, image, description, prev, answer }
 //     mode = "guess"  (默认) 猜画面是什么        —— ≤2 句、≤40 汉字
 //     mode = "right"  小朋友说猜对了            —— ≤2 句、≤25 汉字
-//     mode = "wrong"  小朋友说猜错了，再猜一次   —— ≤2 句、≤40 汉字，不得重复 prev
 //     mode = "reveal" 小朋友公布答案            —— ≤2 句、≤30 汉字
 //   返回：{ review, via: "vision" | "text", mode }
 //
@@ -50,13 +49,8 @@ const SYSTEM_RIGHT = [
   "硬性要求：最多 2 句话、最多 25 个汉字，可带 1~2 个 emoji，不说教、不啰嗦。"
 ].join("\n");
 
-const SYSTEM_WRONG = [
-  ROLE,
-  "你刚才猜的内容被小朋友否定了（不要再说这个答案了）。",
-  "请重新看这幅画，换一个完全不同的猜测再说一次。",
-  "硬性要求：最多 2 句话、最多 40 个汉字，可以先说“嗯……让我再看看！”、“哎呀，那我再猜一次！”之类。",
-  "同样必须大胆猜一个，不许说“我猜不出来”。"
-].join("\n");
+// 说明：曾经还有个 mode="wrong"（猜错了再猜一次），产品上已取消——猜错就地认输，
+// 前端本地回一句俏皮话并请小朋友公布答案，不再重复猜、不再消耗token。
 
 const SYSTEM_REVEAL = [
   ROLE,
@@ -65,7 +59,7 @@ const SYSTEM_REVEAL = [
 ].join("\n");
 
 // 每种模式的字数上限（汉字/字符），超出就在句末标点处截断，保证界面上一定不长
-const LIMITS = { guess: 40, wrong: 40, right: 25, reveal: 30 };
+const LIMITS = { guess: 40, right: 25, reveal: 30 };
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -188,26 +182,23 @@ export async function onRequestPost(context) {
     desc = String((body && body.description) || "").slice(0, 1200).trim();
     image = String((body && body.image) || "").trim();
     if (image.length > MAX_IMAGE_B64) image = "";   // 太大就放弃看图，走文字档
-    prev = String((body && body.prev) || "").slice(0, 120).trim();
+    prev = String((body && body.prev) || "").slice(0, 120).trim();   // 这一轮猜的内容，猜对时用来夸到点子上
     answer = String((body && body.answer) || "").slice(0, 40).trim();
     const m = String((body && body.mode) || "guess");
-    if (m === "right" || m === "wrong" || m === "reveal") mode = m;
+    if (m === "right" || m === "reveal") mode = m;
   } catch (e) {
     return json({ error: "bad_request" }, 400);
   }
   if (!desc && !image) return json({ error: "empty" }, 400);
   if (!env.DEEPSEEK_API_KEY) return json({ error: "no_api_key" }, 503);
-  if (mode === "wrong" && !image && !desc) return json({ error: "empty" }, 400);
 
   const SYSTEM_PROMPT =
     mode === "right" ? SYSTEM_RIGHT :
-    mode === "wrong" ? SYSTEM_WRONG :
     mode === "reveal" ? SYSTEM_REVEAL : SYSTEM_GUESS;
 
   // 用户说的那句话
   let order = "";
   if (mode === "guess") order = "请看这幅画，猜一猜小朋友画的是什么：";
-  else if (mode === "wrong") order = prev ? "你刚才猜的是“" + prev + "”，小朋友说猜错了。请重新猜一个：" : "小朋友说你猜错了，请重新猜一个：";
   else if (mode === "reveal") order = "小朋友说，TA 画的是“" + (answer || "一个秘密") + "”。请回应：";
   else order = prev ? "你猜的是“" + prev + "”，小朋友说猜对啦！请回应：" : "小朋友说你猜对啦！请回应：";
 

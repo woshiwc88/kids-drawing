@@ -2248,13 +2248,11 @@ function hasArtwork() {
 
 // —— 小精灵弹窗：猜猜小朋友画的是什么，猜完还能继续互动 ——
 let spriteInfo = null;      // 当前画作的信息与图片
-let spriteLastGuess = "";   // 上一次猜的内容（再猜时告诉模型别重复）
-let spriteGuessN = 0;       // 已经猜了几次
+let spriteLastGuess = "";   // 这一次猜的内容（猜对时告诉模型，好让它接着夸）
 let spriteLastText = "";    // 最近一次说出来的话
 let typeTimer = null;
 let spriteFetchCtrl = null;
 let spriteBusy = false;     // 请求进行中 → 屏蔽按钮，防止小朋友连点烧 API
-const MAX_GUESS = 3;        // 猜满 3 次就让小朋友公布答案
 
 function openSpriteModal() {
   const info = describeArtwork();
@@ -2269,7 +2267,6 @@ function openSpriteModal() {
     key: (img ? hash32(img) : "noimg") + "|" + info.text   // 画面变了 key 就变
   };
   spriteLastGuess = "";
-  spriteGuessN = 0;
   $("spriteAnswer").value = "";
   $("spriteModal").classList.remove("hidden");
   spriteGuess(false);
@@ -2324,12 +2321,11 @@ function hash32(s) {
 
 const WAIT_TEXT = {
   guess: "亮晶晶正眨着大眼睛看画…",
-  wrong: "嗯……让我再看看！",
   right: "耶——！",
   reveal: "哇——原来是这样呀！"
 };
 
-// 统一的 AI 对话入口：mode = guess / wrong / right / reveal
+// 统一的 AI 对话入口：mode = guess / right / reveal（猜错由前端就地认输，不调大模型）
 // 任何失败都降级为本地兜底，绝不冷场、绝不弹错误给小朋友
 async function spriteSay(mode, answer) {
   if (spriteBusy) return;
@@ -2360,7 +2356,7 @@ async function spriteSay(mode, answer) {
     const data = await resp.json();
     if (!data || !data.review) throw new Error("empty");
     const text = [...String(data.review)].slice(0, 60).join("");
-    if (mode === "guess" || mode === "wrong") {
+    if (mode === "guess") {
       spriteLastGuess = text;
       writeSpriteCache(spriteInfo.key, text);   // 只缓存「猜」的结果
     }
@@ -2395,16 +2391,33 @@ function spriteGuess(force) {
 // 一句话说完之后：决定下面该出现什么
 function afterSay(mode) {
   hideInteract();
-  if (mode === "guess" || mode === "wrong") {
-    spriteGuessN++;
-    if (spriteGuessN >= MAX_GUESS) $("spriteTell").classList.remove("hidden");
-    else $("spriteAsk").classList.remove("hidden");
-  } else {
-    const box = $("spriteText");
-    box.classList.remove("cheer");
-    void box.offsetWidth;      // 强制重排，让动画能重复触发
-    box.classList.add("cheer");
+  const box = $("spriteText");
+  if (mode === "guess") {
+    $("spriteAsk").classList.remove("hidden");   // 猜完给「猜对啦 / 猜错啦」两个按钮
+    return;
   }
+  box.classList.remove("cheer");
+  void box.offsetWidth;      // 强制重排，让动画能重复触发
+  box.classList.add("cheer");
+  if (mode === "giveup") $("spriteTell").classList.remove("hidden");   // 认输 → 请小朋友公布答案
+}
+
+// 小朋友说「猜错啦」：就地认输，不再重复猜（不调大模型，零等待零费用）
+function spriteGiveUp() {
+  if (spriteBusy) return;
+  stopSpriteWork();
+  hideInteract();
+  const line = giveUpLine();
+  spriteLastText = line;
+  typewriteSprite(line, () => afterSay("giveup"));
+}
+function giveUpLine() {
+  const pool = [
+    "哎呀猜错啦！豆豆悄悄告诉我好不好？🤫",
+    "哈哈我猜错啦～那你说，画的是什么呀？👂",
+    "哎呀，亮晶晶猜不出来啦，你教教我嘛！✨"
+  ];
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 // 断网 / 没配 Key / 接口异常时的本地兜底（也尽量用真实画面内容）
@@ -2412,14 +2425,6 @@ function localSay(mode, answer) {
   const info = spriteInfo || { stickers: [], colors: [] };
   if (mode === "right") return "耶！我猜对啦，豆豆画得最最棒！🎉";
   if (mode === "reveal") return "哇！原来是" + (answer || "这个") + "！豆豆教教我好不好？✨";
-  if (mode === "wrong") {
-    const pool = [
-      "嗯……让我再看看！我猜是一只飞飞的小鸟！🐦",
-      "哎呀，那我再猜——是一朵彩虹色的花！🌸",
-      "再猜一次！我猜是一辆要出发的小汽车！🚗"
-    ].filter(s => s !== spriteLastGuess);
-    return pool[Math.floor(Math.random() * pool.length)] || "我再看看哦——我猜是一颗小星星！⭐";
-  }
   if (info.stickers && info.stickers[0]) return "我猜这是一个" + info.stickers[0] + "！✨";
   if (info.colors && info.colors[0]) return "我猜是一片" + info.colors[0] + "的云朵！☁️";
   return "我猜这是一个大大的太阳！☀️";
@@ -2428,7 +2433,7 @@ function localSay(mode, answer) {
 $("spriteBtn").addEventListener("click", () => { if (!spriteBusy) openSpriteModal(); });
 $("spriteOk").addEventListener("click", closeSpriteModal);
 $("spriteRight").addEventListener("click", () => spriteSay("right", ""));
-$("spriteWrong").addEventListener("click", () => spriteSay("wrong", ""));
+$("spriteWrong").addEventListener("click", spriteGiveUp);
 $("spriteSend").addEventListener("click", sendSpriteAnswer);
 $("spriteAnswer").addEventListener("keydown", e => { if (e.key === "Enter") sendSpriteAnswer(); });
 function sendSpriteAnswer() {
