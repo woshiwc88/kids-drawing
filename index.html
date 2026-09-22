@@ -313,6 +313,8 @@ body.fs .panel{bottom:calc(6px + var(--safe-b));z-index:40}
 }
 
 /* 作品大图预览 */
+/* 作品大图预览：必须压过「我的作品」页（.page z-index:70），否则弹窗会藏在画廊背后看不见 */
+#viewer{z-index:75}
 .viewer-card{
   width:min(360px,92vw);background:#fff;border-radius:26px;padding:14px 14px 16px;
   text-align:center;box-shadow:0 16px 40px rgba(70,45,95,.28);animation:pop .18s ease-out;
@@ -1193,6 +1195,7 @@ function pushHistory() {
   if (state.history.length > MAX_HISTORY) state.history.shift();
   state.hIndex = state.history.length - 1;
   updateHistoryButtons();
+  updateSpriteBtn();     // 画完一笔/贴完贴纸后立刻刷新，不用等下一次 redraw
   persistCurrent();
 }
 
@@ -1417,6 +1420,7 @@ function onPointerDown(e) {
   }
   stroke = it;
   state.items.push(it);
+  updateSpriteBtn();      // 手指一落下就出现，不用等抬手
 }
 
 // 手指移动
@@ -2214,7 +2218,15 @@ function localPraise(info) {
 
 // —— 常驻入口按钮：画布上有内容就一直在，清空或撤销到空白时才消失 ——
 function updateSpriteBtn() {
-  $("spriteBtn").classList.toggle("hidden", state.items.length === 0);
+  $("spriteBtn").classList.toggle("hidden", !hasArtwork());
+}
+// 「画布不是空白」= 至少有一个真内容；橡皮擦痕不算，正在拖的那张（临时 hidden）算
+function hasArtwork() {
+  for (const it of state.items) {
+    if (it.type === "stroke" && it.brush === "eraser") continue;
+    return true;
+  }
+  return false;
 }
 
 // —— 点评弹窗 ——
