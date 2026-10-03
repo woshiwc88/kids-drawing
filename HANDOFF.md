@@ -102,6 +102,10 @@ python3 -c "import glob,os;[os.unlink(p) for p in glob.glob('.git/**/*.lock',rec
 
 **headless 的 `--window-size` 不影响 `window.innerWidth`（实测恒为 500）**：想按手机宽度验证布局，必须把 app 放进 `<iframe style="width:375px">` 里、再截外层页面；否则你看到的「元素缺失/错位」只是截图把右边裁掉了的假象（踩过一次：以为「我爱你」缩略图没渲染，其实是 500px 布局被 375px 截图裁掉了第 5 列）。像素级确认可以用 `drawImage` 到离屏 canvas 数非透明像素比例。
 
+**要从 iframe 里把测试结果读出来，加 `--allow-file-access-from-files`**，然后让内层页面 `parent.document.title = "RESULT " + 结果`，外层用 `--dump-dom` 读 `<title>` 即可（不加这个参数时 `file://` 之间互相当作不同源，跨 frame 访问 `parent.document` 会抛 SecurityError，`--dump-dom` 也拿不到 iframe 内部 DOM）。这是目前最省事的「手机宽度 + 断言」组合，比截图肉眼看数字靠谱。
+
+**数像素时注意底色**：回放/导出的画布是**白底**（不是透明），所以「统计 alpha>0」永远等于整张画布面积、看不出差异。要数的是**非白像素**：`alpha>12 && (r<238 || g<238 || b<238)`。
+
 上一轮贴纸交互改动跑了 29 个交互用例 + 11 个回归用例。单纯用 stub DOM 测不出来「拖完松手贴纸消失」这种 bug，必须有真实像素断言。
 
 ## 七、当前进度
