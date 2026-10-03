@@ -201,6 +201,8 @@ button{font-family:inherit;color:inherit;border:none;background:none;padding:0;c
 .cell.on{background:#f1eaff;box-shadow:0 0 0 3px #cabaff inset}
 .cell.on i{color:var(--brand-2)}
 .grid-size{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.grid-sym{grid-template-columns:repeat(5,1fr)}
+.grid-sym .size-btn{height:46px;border-radius:15px}
 .size-btn{
   height:56px;border-radius:18px;background:#f8f5fd;
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
@@ -343,9 +345,17 @@ body.fs .panel{bottom:calc(6px + var(--safe-b));z-index:40}
 }
 #viewerImg{display:block;width:100%;max-height:52vh;object-fit:contain;background:#fff}
 #viewerDate{margin:10px 0 12px;font-size:13px;font-weight:800;color:var(--ink-soft)}
-.viewer-actions{display:flex;gap:8px}
+.viewer-actions{display:flex;gap:8px;flex-wrap:wrap}
 .viewer-actions .btn{height:50px;font-size:16px}
 #viewerEdit{flex:1.2}
+#viewerReplay{flex:1;font-size:15px}
+#replay{z-index:79}
+.rp-card{width:min(360px,92vw);background:#fff;border-radius:26px;padding:12px 12px 16px;text-align:center;box-shadow:0 16px 40px rgba(70,45,95,.28);animation:pop .18s ease-out}
+.rp-stage{display:flex;align-items:center;justify-content:center;background:#fff;border-radius:18px;border:1px solid #efe9f8;padding:4px;overflow:hidden}
+.rp-stage canvas{display:block;touch-action:none}
+.rp-tip{font-size:13px;color:var(--ink-soft);margin:10px 0 12px}
+.rp-actions{display:flex;gap:8px}
+.rp-actions .btn{flex:1;height:48px;font-size:16px}
 </style>
 </head>
 <body>
@@ -462,8 +472,11 @@ body.fs .panel{bottom:calc(6px + var(--safe-b));z-index:40}
 <div class="panel hidden" id="panel-brush">
   <div class="panel-head"><span>选一支笔 ✏️</span><button class="close-x" data-close>×</button></div>
   <div class="grid-brush" id="brushGrid"></div>
+  <div class="sub-title">对称魔法 🪞</div>
+  <div class="grid-size grid-sym" id="symGrid"></div>
   <div class="sub-title">笔粗</div>
   <div class="grid-size" id="sizeGrid"></div>
+  <div class="tip" id="symTip">打开对称，画一笔会变成一朵小花 ❄️<br>只影响之后画的新笔迹，已经画好的不会变</div>
 </div>
 
 <!-- 面板：贴纸 -->
@@ -511,9 +524,24 @@ body.fs .panel{bottom:calc(6px + var(--safe-b));z-index:40}
     <div id="viewerImgWrap"><img id="viewerImg" alt="我的画"></div>
     <div id="viewerDate"></div>
     <div class="viewer-actions">
+      <button class="btn wide" id="viewerReplay">▶ 看看是怎么画出来的</button>
+    </div>
+    <div class="viewer-actions">
       <button class="btn ghost" id="viewerClose">关闭</button>
       <button class="btn ghost" id="viewerSave">💾 保存</button>
       <button class="btn primary" id="viewerEdit">🖌️ 继续画</button>
+    </div>
+  </div>
+</div>
+
+<!-- 画画回放：把这张画从头一笔一笔重画一遍 -->
+<div id="replay" class="modal hidden">
+  <div class="rp-card">
+    <div class="rp-stage"><canvas id="rpCanvas"></canvas></div>
+    <div class="rp-tip" id="rpTip">看它一笔一笔画出来～</div>
+    <div class="rp-actions">
+      <button class="btn ghost" id="rpAgain">🔁 再看一次</button>
+      <button class="btn primary" id="rpClose">好啦</button>
     </div>
   </div>
 </div>
@@ -588,7 +616,11 @@ const BRUSHES = [
   { id: "rainbow",     emoji: "🌈", name: "彩虹" },
   { id: "star",        emoji: "🌟", name: "星星" },
   { id: "bubble",      emoji: "🫧", name: "泡泡" },
-  { id: "firework",    emoji: "🎆", name: "烟花" }
+  { id: "firework",    emoji: "🎆", name: "烟花" },
+  { id: "heart",       emoji: "💖", name: "爱心" },
+  { id: "glitter",     emoji: "💫", name: "闪光" },
+  { id: "fur",         emoji: "🧶", name: "毛绒" },
+  { id: "petal",       emoji: "🌸", name: "花瓣" }
 ];
 
 // 笔粗（CSS 像素）
@@ -690,6 +722,7 @@ const state = {
   shape: "circle",
   shapeFilled: false,
   sticker: "⭐",
+  sym: 1,               // 对称份数（1 = 关，2/4/6/8 = 万花筒）
   items: [],            // 所有绘制对象（矢量，可撤销/重画）
   history: [[]],        // 历史快照
   hIndex: 0
@@ -1036,6 +1069,89 @@ function drawSeg(ctx, s, i) {
       }
       break;
     }
+    // 爱心笔：一路撒小爱心
+    case "heart": {
+      const n = clamp(Math.round(d / (w * 1.35)), 1, 8);
+      for (let k = 0; k < n; k++) {
+        const t = (k + 0.5) / n;
+        const r = Math.max(9, w * (0.75 + rng() * 0.55));
+        const hx = p0.x + dx * t, hy = p0.y + dy * t;
+        ctx.save();
+        ctx.translate(hx, hy);
+        ctx.rotate((rng() - 0.5) * 0.7);
+        ctx.fillStyle = rgba(col, 0.72 + rng() * 0.26);
+        ctx.beginPath(); heartPath(ctx, 0, 0, r, r); ctx.fill();
+        ctx.fillStyle = "rgba(255,255,255,.6)";
+        ctx.beginPath(); ctx.arc(-r * 0.16, -r * 0.14, r * 0.11, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+      break;
+    }
+    // 闪光笔：彩条 + 高光 + 一路撒亮片
+    case "glitter": {
+      const gw = w * 1.5;
+      ctx.strokeStyle = rgba(col, 0.7);
+      ctx.lineWidth = gw;
+      lineTo(ctx, p0, p1);
+      ctx.strokeStyle = "rgba(255,255,255,.85)";
+      ctx.lineWidth = Math.max(1, gw * 0.3);
+      lineTo(ctx, p0, p1);
+      const n = clamp(Math.round(d / (w * 0.75)), 1, 14);
+      for (let k = 0; k < n; k++) {
+        const t = rng();
+        const sr = w * (0.14 + rng() * 0.2);
+        const jx = (rng() - 0.5) * gw * 0.9, jy = (rng() - 0.5) * gw * 0.9;
+        ctx.fillStyle = (k % 3 === 0) ? "rgba(255,214,120,.95)" : "rgba(255,255,255,.95)";
+        ctx.beginPath();
+        starPath(ctx, p0.x + dx * t + jx, p0.y + dy * t + jy, sr, 4, 0.3, rng() * Math.PI);
+        ctx.fill();
+      }
+      break;
+    }
+    // 毛绒笔：粗软的身体 + 两侧炸出来的小绒毛
+    case "fur": {
+      ctx.strokeStyle = rgba(col, 0.5);
+      ctx.lineWidth = w * 1.35;
+      lineTo(ctx, p0, p1);
+      ctx.strokeStyle = rgba(col, 0.92);
+      ctx.lineWidth = Math.max(1, w * 0.7);
+      lineTo(ctx, p0, p1);
+      const nx = -dy / d * w * 0.72, ny = dx / d * w * 0.72;   // 单位法向量
+      const n = clamp(Math.round(d / 3.2), 2, 22);
+      for (let k = 0; k < n; k++) {
+        const t = k / n;
+        const side = rng() < 0.5 ? 1 : -1;
+        const len = w * (0.45 + rng() * 0.75);
+        const bx = p0.x + dx * t + nx * side, by = p0.y + dy * t + ny * side;
+        ctx.strokeStyle = rgba(col, 0.75);
+        ctx.lineWidth = Math.max(0.8, w * 0.15);
+        ctx.beginPath();
+        ctx.moveTo(bx, by);
+        ctx.lineTo(bx + nx * side * len + dx / d * (rng() - 0.5) * w * 0.5,
+                   by + ny * side * len + dy / d * (rng() - 0.5) * w * 0.5);
+        ctx.stroke();
+      }
+      break;
+    }
+    // 花瓣笔：一路开小五瓣花
+    case "petal": {
+      const n = clamp(Math.round(d / (w * 1.25)), 1, 8);
+      for (let k = 0; k < n; k++) {
+        const t = (k + 0.5) / n;
+        const r = Math.max(9, w * (0.55 + rng() * 0.5));
+        const fx = p0.x + dx * t + (rng() - 0.5) * w * 0.3;
+        const fy = p0.y + dy * t + (rng() - 0.5) * w * 0.3;
+        ctx.save();
+        ctx.translate(fx, fy);
+        ctx.rotate(rng() * Math.PI * 2);
+        ctx.fillStyle = rgba(col, 0.82);
+        ctx.beginPath(); flowerPath(ctx, 0, 0, r, r); ctx.fill();
+        ctx.fillStyle = "rgba(255,222,110,.95)";
+        ctx.beginPath(); ctx.arc(0, 0, r * 0.19, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+      break;
+    }
   }
   ctx.restore();
 }
@@ -1044,6 +1160,57 @@ function drawSeg(ctx, s, i) {
 function drawDot(ctx, s, p) {
   const tmp = { points: [{ x: p.x - 0.01, y: p.y - 0.01 }, { x: p.x + 0.01, y: p.y + 0.01 }], brush: s.brush, color: s.color, size: s.size, seed: s.seed, cum: [0, 0] };
   drawSeg(ctx, tmp, 1);
+}
+
+/* ---------- 对称魔法（万花筒）：一笔绕画布中心旋转出 N 份 ----------
+   数据里只存原始的那一笔（it.sym = 份数），所有副本都在渲染时现算。
+   好处：撤销重做、矢量存档、导出图片、AI 看图全都自动一致，不用管副本；
+   老作品没有 sym 字段 → symCount 返回 1，行为和以前一模一样。 */
+function symCount(it) {
+  const n = Number(it && it.sym);
+  return (n > 1 && n <= 12) ? Math.round(n) : 1;
+}
+// 把一次绘制按 rot(k·2π/n) 重复 n 遍（画布中心为轴）
+function symApply(ctx, it, fn) {
+  const n = symCount(it);
+  if (n === 1) { fn(ctx); return; }
+  const cx = W / 2, cy = H / 2;
+  for (let k = 0; k < n; k++) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(k * Math.PI * 2 / n);
+    ctx.translate(-cx, -cy);
+    fn(ctx);
+    ctx.restore();
+  }
+}
+function paintSeg(ctx, s, i) { symApply(ctx, s, c => drawSeg(c, s, i)); }
+function paintDot(ctx, s, p) { symApply(ctx, s, c => drawDot(c, s, p)); }
+
+// 画一条完整笔迹。upto：只画到第几个点（回放时用），null = 全部
+function drawStrokeItem(ctx, it, upto) {
+  if (it.brush === "firework") { symApply(ctx, it, c => drawFirework(c, it)); return; }
+  const pts = it.points || [];
+  if (!pts.length) return;
+  const m = (upto == null) ? pts.length : clamp(Math.round(upto), 1, pts.length);
+  if (m < 2) { paintDot(ctx, it, pts[0]); return; }
+  for (let i = 1; i < m; i++) paintSeg(ctx, it, i);
+}
+
+// 画一个矢量图形（对称版）
+function drawShapeItem(ctx, it) {
+  const x0 = it.x0, y0 = it.y0, x1 = it.x1, y1 = it.y1;
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  const w = Math.max(1, Math.abs(x1 - x0)), h = Math.max(1, Math.abs(y1 - y0));
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.strokeStyle = it.color;
+  ctx.fillStyle = it.color;
+  ctx.lineWidth = Math.max(2, it.size * 0.75);
+  ctx.beginPath();
+  shapePath(ctx, it.shape, cx, cy, w, h, x0, y0, x1, y1);
+  if (it.filled) { ctx.fill(); ctx.lineWidth = Math.max(1.5, it.size * 0.4); ctx.stroke(); }
+  else ctx.stroke();
 }
 
 // 烟花：以某点为圆心的爆开效果（确定性随机，重画一致）
@@ -1417,10 +1584,8 @@ function renderItem(ctx, it) {
   ctx.globalCompositeOperation = "source-over";
 
   if (it.type === "stroke") {
-    if (it.brush === "firework") { drawFirework(ctx, it); ctx.restore(); return; }
     ctx.restore();
-    if (it.points.length === 1) { drawDot(ctx, it, it.points[0]); return; }
-    for (let i = 1; i < it.points.length; i++) drawSeg(ctx, it, i);
+    drawStrokeItem(ctx, it, null);
     return;
   }
 
@@ -1442,19 +1607,8 @@ function renderItem(ctx, it) {
   }
 
   if (it.type === "shape") {
-    const x0 = it.x0, y0 = it.y0, x1 = it.x1, y1 = it.y1;
-    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-    const w = Math.max(1, Math.abs(x1 - x0)), h = Math.max(1, Math.abs(y1 - y0));
-    ctx.lineJoin = "round";
-    ctx.lineCap = "round";
-    ctx.strokeStyle = it.color;
-    ctx.fillStyle = it.color;
-    ctx.lineWidth = Math.max(2, it.size * 0.75);
-    ctx.beginPath();
-    shapePath(ctx, it.shape, cx, cy, w, h, x0, y0, x1, y1);
-    if (it.filled) { ctx.fill(); ctx.lineWidth = Math.max(1.5, it.size * 0.4); ctx.stroke(); }
-    else ctx.stroke();
     ctx.restore();
+    symApply(ctx, it, c => drawShapeItem(c, it));
     return;
   }
   ctx.restore();
@@ -1637,6 +1791,7 @@ function settleStickerDrag() {
   if (dragInfo && dragInfo.moved) pushHistory();   // 只是点了一下没动，不写历史
   dragSticker = null;
   dragInfo = null;
+  if (state.sym > 1) paintSymGuide();     // 对称还开着的话，把轴线补回来
 }
 
 // 手指按下
@@ -1669,6 +1824,7 @@ function onPointerDown(e) {
   }
 
   // (1) 贴纸：无论现在拿着什么工具，按在贴纸上就是抓起来移动
+  if (!dragSticker) clearPreview();     // 手指落下：先把对称轴线这类临时提示擦掉
   const grabbed = hitSticker(p);
   if (grabbed) {
     beginStickerDrag(grabbed, p, e.pointerId, false);
@@ -1677,12 +1833,14 @@ function onPointerDown(e) {
 
   // (2) 贴纸模式下点空白 = 贴一个新的，并且立刻就能拖走
   if (state.tool === "sticker") {
+    const st = Date.now();
     const target = {
       type: "sticker",
       emoji: state.sticker,
       x: p.x, y: p.y,
       size: clamp(state.size * 9, 44, 180),
-      rot: 0
+      rot: 0,
+      t0: st, t1: st
     };
     state.items.push(target);
     beginStickerDrag(target, p, e.pointerId, true);
@@ -1697,6 +1855,8 @@ function onPointerDown(e) {
   }
 
   // (3) 自由绘画
+  const nowT = Date.now();
+  const sym = symCount({ sym: state.sym });
   const it = {
     type: "stroke",
     brush: state.brush,
@@ -1704,9 +1864,13 @@ function onPointerDown(e) {
     size: state.size,
     seed: Math.floor(Math.random() * 1e6) + 1,
     points: [p],
-    cum: [0]
+    cum: [0],
+    sym: sym,        // 对称份数（1 = 不镜像）
+    t0: nowT,        // 回放时间轴：起笔时刻
+    t1: nowT         // 落笔时才更新为真实时刻
   };
   if (state.brush === "firework") {   // 烟花：点一下直接爆开
+    it.t1 = nowT;
     state.items.push(it);
     renderItem(dctx, it);
     pushHistory();
@@ -1765,10 +1929,13 @@ function onPointerMove(e) {
 
   // 图形：拖动预览
   if (shapeStart) {
+    const st = Date.now();
     const it = {
       type: "shape", shape: state.shape, color: state.color,
       size: state.size, filled: state.shapeFilled,
-      x0: shapeStart.x, y0: shapeStart.y, x1: p.x, y1: p.y
+      x0: shapeStart.x, y0: shapeStart.y, x1: p.x, y1: p.y,
+      sym: symCount({ sym: state.sym }),
+      t0: st, t1: st
     };
     clearPreview();
     renderItem(pctx, it);
@@ -1786,7 +1953,7 @@ function onPointerMove(e) {
     if (d < 0.7) continue;              // 过滤抖动，减少节点
     pts.push(q);
     stroke.cum.push(stroke.cum[stroke.cum.length - 1] + d);
-    drawSeg(dctx, stroke, pts.length - 1);
+    paintSeg(dctx, stroke, pts.length - 1);
     last.x = q.x; last.y = q.y;
   }
 }
@@ -1810,25 +1977,31 @@ function onPointerUp(e) {
     const w = Math.abs(p.x - shapeStart.x), h = Math.abs(p.y - shapeStart.y);
     clearPreview();
     if (w > 6 || h > 6) {   // 太小忽略，避免误触画出小点
+      const st = Date.now();
       const it = {
         type: "shape", shape: state.shape, color: state.color,
         size: state.size, filled: state.shapeFilled,
-        x0: shapeStart.x, y0: shapeStart.y, x1: p.x, y1: p.y
+        x0: shapeStart.x, y0: shapeStart.y, x1: p.x, y1: p.y,
+        sym: symCount({ sym: state.sym }),
+        t0: st, t1: st
       };
       state.items.push(it);
       renderItem(dctx, it);
       pushHistory();
     }
     shapeStart = null;
+    if (state.sym > 1) paintSymGuide();
     return;
   }
 
   // 笔迹落定
   if (stroke) {
     const pts = stroke.points;
-    if (pts.length < 2) drawDot(dctx, stroke, pts[0]);
+    stroke.t1 = Date.now();      // 回放时间轴：这一笔真正画完的时刻
+    if (pts.length < 2) paintDot(dctx, stroke, pts[0]);
     stroke = null;
     pushHistory();
+    if (state.sym > 1) paintSymGuide();
   }
 }
 
@@ -1841,9 +2014,11 @@ function onPointerCancel(e) {
   if (shapeStart) { shapeStart = null; clearPreview(); }
   if (stroke) {
     const pts = stroke.points;
-    if (pts.length < 2) drawDot(dctx, stroke, pts[0]);
+    stroke.t1 = Date.now();      // 回放时间轴：这一笔真正画完的时刻
+    if (pts.length < 2) paintDot(dctx, stroke, pts[0]);
     stroke = null;
     pushHistory();
+    if (state.sym > 1) paintSymGuide();
   }
 }
 
@@ -1971,6 +2146,62 @@ function markSizes() {
   });
 }
 
+// —— 对称魔法（万花筒）——
+const SYMS = [1, 2, 4, 6, 8];
+function symIcon(n) {
+  if (n <= 1) return '<svg class="ic" viewBox="0 0 24 24" style="width:24px;height:24px"><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/></svg>';
+  let s = "";
+  for (let k = 0; k < n; k++) {
+    const a = k * Math.PI * 2 / n - Math.PI / 2;
+    s += `<circle cx="${(12 + Math.cos(a) * 6.6).toFixed(1)}" cy="${(12 + Math.sin(a) * 6.6).toFixed(1)}" r="2.5" fill="currentColor" stroke="none"/>`;
+  }
+  return `<svg class="ic" viewBox="0 0 24 24" style="width:24px;height:24px">${s}</svg>`;
+}
+function buildSym() {
+  const box = $("symGrid");
+  box.innerHTML = "";
+  SYMS.forEach(v => {
+    const b = document.createElement("button");
+    b.className = "size-btn";
+    b.dataset.sym = v;
+    b.innerHTML = `<span>${symIcon(v)}</span><span>${v === 1 ? "关" : v + "份"}</span>`;
+    b.addEventListener("click", () => setSym(v));
+    box.appendChild(b);
+  });
+  markSym();
+}
+function setSym(v) {
+  state.sym = v;
+  markSym();
+  if (v > 1) { paintSymGuide(); toast("对称开啦，一笔变" + v + "份 ✨"); }
+  else { clearPreview(); toast("对称关掉啦"); }
+}
+function markSym() {
+  document.querySelectorAll("#symGrid .size-btn").forEach(el => {
+    el.classList.toggle("on", Number(el.dataset.sym) === Number(state.sym));
+  });
+}
+// 在预览层画淡虚线轴线，让小朋友知道"围着哪里转"
+function paintSymGuide() {
+  clearPreview();
+  const n = symCount({ sym: state.sym });
+  if (n <= 1) return;
+  pctx.save();
+  pctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const cx = W / 2, cy = H / 2, R = Math.hypot(W, H);
+  pctx.setLineDash([6, 9]);
+  pctx.strokeStyle = "rgba(150,120,200,.45)";
+  pctx.lineWidth = 1;
+  for (let k = 0; k < n; k++) {
+    const a = k * Math.PI * 2 / n;
+    pctx.beginPath();
+    pctx.moveTo(cx, cy);
+    pctx.lineTo(cx + Math.cos(a) * R, cy + Math.sin(a) * R);
+    pctx.stroke();
+  }
+  pctx.restore();
+}
+
 // —— 贴纸面板 ——
 function buildStickers() {
   const box = $("stickerGrid");
@@ -2050,6 +2281,7 @@ function openPanel(name) {
 function closePanels() {
   PANELS.forEach(p => $("panel-" + p).classList.add("hidden"));
   markTabs(null);
+  clearPreview();          // 收起面板时擦掉对称轴线，别挡着看画
 }
 function markTabs(active) {
   const cur = active === undefined ? null : active;
@@ -2239,6 +2471,84 @@ function renderGallery() {
   });
 }
 
+/* ---------- 画画回放：按时间轴把一幅画重新画一遍 ----------
+   每个绘制对象都带着 t0（起笔）和 t1（收笔）两个时刻，回放时按时推进：
+   笔画画到一半就露一半，贴纸/图形/烟花到点整块出现。
+   老作品没有时间戳 → 退化成每 0.42 秒画一笔，照样能看。 */
+let rpRaf = 0, rpTl = null, rpScale = 2;
+
+function buildTimeline(items) {
+  const list = items.filter(it => !it.hidden);
+  if (!list.length) return null;
+  const timed = list.every(it => typeof it.t0 === "number");
+  const rows = list.map((it, i) => {
+    const t0 = timed ? it.t0 : i * 420;
+    const t1 = timed ? (typeof it.t1 === "number" ? Math.max(it.t1, t0 + 16) : t0 + 420) : i * 420 + 420;
+    return { it, t0, t1 };
+  }).sort((a, b) => a.t0 - b.t0);
+  return { rows, start: rows[0].t0, end: rows[rows.length - 1].t1 };
+}
+
+// 画出"某一时刻"的画面
+function paintReplay(ctx, tl, nowT) {
+  ctx.setTransform(rpScale, 0, 0, rpScale, 0, 0);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, W, H);
+  for (const r of tl.rows) {
+    if (nowT < r.t0) continue;
+    const it = r.it;
+    if (it.type === "stroke" && it.brush !== "firework") {
+      const p = clamp((nowT - r.t0) / Math.max(16, r.t1 - r.t0), 0, 1);
+      drawStrokeItem(ctx, it, Math.max(1, Math.ceil(p * (it.points || []).length)));
+    } else {
+      renderItem(ctx, it);
+    }
+  }
+}
+
+function playReplay() {
+  if (!rpTl) return;
+  cancelAnimationFrame(rpRaf);
+  const tl = rpTl;
+  const span = Math.max(1, tl.end - tl.start);
+  const dur = clamp(span / 4, 2200, 9000);      // 按下笔走完为止，最多 9 秒
+  const ctx = $("rpCanvas").getContext("2d");
+  const t0 = performance.now();
+  $("rpTip").textContent = "看它一笔一笔画出来～";
+  const step = now => {
+    const p = Math.min(1, (now - t0) / dur);
+    paintReplay(ctx, tl, tl.start + p * span);
+    if (p < 1) rpRaf = requestAnimationFrame(step);
+    else { rpRaf = 0; $("rpTip").textContent = "画好啦！✨"; }
+  };
+  rpRaf = requestAnimationFrame(step);
+}
+
+function openReplay(items) {
+  const tl = buildTimeline(items || []);
+  if (!tl) { toast("这张画还没有内容哦"); return; }
+  rpTl = tl;
+  const cv = $("rpCanvas");
+  const maxW = Math.min(330, window.innerWidth - 76);
+  const maxH = Math.min(470, window.innerHeight - 240);
+  const s = Math.max(0.2, Math.min(1, maxW / Math.max(1, W), maxH / Math.max(1, H)));
+  rpScale = Math.max(1, Math.round(2 * s * 100) / 100);
+  cv.style.width = Math.round(W * s) + "px";
+  cv.style.height = Math.round(H * s) + "px";
+  cv.width = Math.max(1, Math.round(W * rpScale));
+  cv.height = Math.max(1, Math.round(H * rpScale));
+  $("replay").classList.remove("hidden");
+  playReplay();
+}
+function stopReplay() {
+  cancelAnimationFrame(rpRaf);
+  rpRaf = 0; rpTl = null;
+  $("replay").classList.add("hidden");
+}
+$("rpClose").addEventListener("click", stopReplay);
+$("rpAgain").addEventListener("click", playReplay);
+$("replay").addEventListener("click", e => { if (e.target.id === "replay") stopReplay(); });
+
 // —— 作品大图预览 ——
 let viewingItem = null;
 function parseItems(it) {
@@ -2272,9 +2582,15 @@ function openViewer(it) {
   img.src = src;
   $("viewerDate").textContent = it.date || "";
   $("viewerEdit").style.display = items.length ? "" : "none";
+  $("viewerReplay").style.display = items.length ? "" : "none";
   $("viewer").classList.remove("hidden");
 }
 function closeViewer() { $("viewer").classList.add("hidden"); viewingItem = null; }
+$("viewerReplay").addEventListener("click", () => {
+  const it = viewingItem;
+  if (!it) return;
+  openReplay(parseItems(it));
+});
 $("viewerClose").addEventListener("click", closeViewer);
 $("viewer").addEventListener("click", e => { if (e.target.id === "viewer") closeViewer(); });
 $("viewerEdit").addEventListener("click", () => {
@@ -2410,6 +2726,7 @@ function init() {
   buildSwatches();
   buildBrushes();
   buildSizes();
+  buildSym();
   buildStickers();
   buildShapes();
 

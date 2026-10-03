@@ -60,7 +60,7 @@ python3 -c "import glob,os;[os.unlink(p) for p in glob.glob('.git/**/*.lock',rec
 
 | 文件 | 作用 |
 | --- | --- |
-| `index.html` | 全部逻辑，2227 行。HTML + CSS + JS 都在里面，含自绘 SVG 图标雪碧图 |
+| `index.html` | 全部逻辑，3062 行。HTML + CSS + JS 都在里面，含自绘 SVG 图标雪碧图 |
 | `functions/api/review.js` | 小精灵接口（Cloudflare Pages Function）。三种 `mode`：`guess` 猜画的是什么（≤2 句、≤40 汉字）/ `right` 猜对后的庆祝 / `reveal` 小朋友公布答案后的惊喜回应（**`wrong` 已废弃删除**，猜错由前端本地认输）。有图走 `deepseek-v4-flash-vision-exp`，视觉不可用退 `deepseek-chat` |
 | `service-worker.js` | 离线缓存，`CACHE_NAME` 由 CI 自动改写，不要手改 |
 | `manifest.webmanifest` | PWA 安装信息 |
@@ -72,13 +72,15 @@ python3 -c "import glob,os;[os.unlink(p) for p in glob.glob('.git/**/*.lock',rec
 
 - `state.items` — 画面元素的矢量数组，**所有修改的唯一数据源**。任何变更都改它，然后 `redraw()` 全量重绘，撤销/重做靠 `pushHistory()` 存快照
 - `STICKERS` / `PONIES` / `PRINCESSES` / `WORDS` / `SHAPES` — 贴纸（57 个：39 个 emoji + 6 匹小马 + 4 位小公主 + 8 张祝福语）、图形（16 种）的数据定义
+- `BRUSHES` — 13 支笔的数据定义（铅笔/蜡笔/彩笔/荧光/橡皮 + 魔法系 8 支：彩虹、星星、泡泡、烟花、**爱心、闪光、毛绒、花瓣**）。每支笔的具体画法都在 `drawSeg()` 的 `switch (s.brush)` 里，**加新笔刷 = `BRUSHES` 加一行 + `drawSeg` 加一个 case**，别的地方都不用动。约定：用 `rng()`（每段独立的确定性随机）让重画结果完全一致，用 `col` 和 `w`（当前颜色、当前线宽）而不是写死颜色
+- **对称魔法（万花筒）**：`state.sym` = 2/4/6/8，作用在**之后画的**新对象上（存进 `it.sym`）。副本不落数据，只在渲染时由 `symApply(ctx, it, fn)` 绕画布中心 `(W/2, H/2)` 旋转复制，所以撤销、存档、导出、AI 看图全都自动一致。`paintSeg` / `paintDot` 是笔迹的对称版入口，`drawStrokeItem` / `drawShapeItem` 是完整对象版（也供回放用）
+- **画画回放**：每个对象带 `t0`（起笔）/`t1`（收笔）时间戳，`buildTimeline()` 排出时间轴，`paintReplay()` 按时刻重画（笔迹按点数比例露出半截）。入口是作品大图预览里的「▶ 看看是怎么画出来的」；老作品没有时间戳会退化成每 0.42 秒一笔
 - `drawPony(ctx, idx, size)` — 小马是 canvas 矢量绘制的（不是图片），改配色改 `PONIES` 数组即可
 - **自绘贴纸的命名规范**：`#<kind><序号>`，如 `#pony2` / `#princess0` / `#word5`。要加新贴纸，三步：① 数据里加进 `STICKERS`；② 写一个 `drawXxx(ctx, idx, size)` 并登记到 `STICKER_DRAW = { pony, princess, word, ... }`；③ 在 `stickerName()` 里给中文名（小精灵介绍画作用）。
   - `parseSticker(s)` 拆出 kind/idx，`stickerThumb(s)` 生成面板缩略图，`renderItem()` 里统一分派——加新种类不用改渲染主流程
   - 惯例：绘制函数先 `ctx.scale(size,size)`，在 `[-0.5, 0.5]` 的单位坐标里作画（`drawWord` 例外，它按像素画横向牌子）
   - 贴纸面板里 `"##名字"` 是分组小标题（`STICKER_GROUP`），会被 `buildStickers()` 跳过、不生成格子
 - 指针交互在 `pointerdown` / `pointermove` / `pointerup`，贴纸拖动相关的是 `hitSticker()`、`scheduleStickerPaint()`、`settleStickerDrag()`、`handOverDrag()`
-
 ## 五、改动时的硬约束
 
 1. **别引入任何外部依赖**。要能在完全断网环境下跑，CDN 引用的库、在线字体、外链图片都不行。唯一的例外是「小精灵点评」：它是联网增强功能，调本站 `/api/review`（Pages Function），**断网或接口异常必须自动降级为本地夸夸**，不能报错、不能影响画画主流程。
@@ -89,6 +91,8 @@ python3 -c "import glob,os;[os.unlink(p) for p in glob.glob('.git/**/*.lock',rec
 6. **DeepSeek API Key 只放 Cloudflare Pages 环境变量 `DEEPSEEK_API_KEY`**，绝不写进代码、仓库或前端。
 7. **弹窗层级（z-index）已成体系，改动务必复验**：`大图预览 #viewer 75` < `确认框 #modal 78` < `toast 80`，而「我的作品」这类整页 `.page` 是 **70**、`.modal` 基类默认只有 **60**。任何从 `.page`（画廊/设置页）里弹出的弹窗，都必须显式提到 70 以上，否则会被整页盖住——表现就是「点了没反应」。验证方法：用 `document.elementFromPoint(弹窗中心)` 断言命中的是弹窗内部元素，光看 `hidden` 类有没有去掉不够。
 8. **`roundRectPath()` 不会自己 `beginPath()`**（沿用 canvas 老习惯）。调用前必须自己 `ctx.beginPath()`，否则路径会累积——底色被填成「多个形状的并集」，相邻元素还会粘连。加自绘贴纸/新形状时特别注意。
+9. **对称的轴心是全局 `W/2, H/2`**：`symApply()` 读的是当前画布的逻辑尺寸，所以它只能用在「和主画布同尺寸」的上下文里（主画布、`composeCanvas`、回放画布都对）。想拿一个 100×100 的离屏小 canvas 去测对称，画出来会跑偏——这不是 bug。另外对称是**渲染期行为**：改 `state.sym` 只影响之后新画的笔，已经画好的不受影响（这也是它能被撤销、能存档的原因）。
+10. **回放的时间戳必须写在 `pushHistory()` 之前**：`state.history` 里存的是 `state.items.slice()` 的**浅拷贝**（元素是同一批对象引用），所以 `t1` 即使抬笔时才补写，历史快照也能看到。但如果你把某个笔迹对象换成了新对象（而不是改字段），记得两边同步，否则回放时间轴会缺项。
 
 ## 六、验证方式
 
@@ -115,11 +119,15 @@ python3 -c "import glob,os;[os.unlink(p) for p in glob.glob('.git/**/*.lock',rec
 | 最新 | `8eacd97`~ | 画廊点 ✕ 删不掉：`#modal` 提到 z-index 78，层级定为 **预览 75 < 确认框 78 < toast 80** |
 | — | （本次） | ① ✨ 出现时机修正：`pushHistory()` 里补调 `updateSpriteBtn()`（此前只在 `redraw()` 里更新，而画完一笔走的是 pushHistory，**导致画完了图标还不出现**），手指按下即显示；判空改为 `hasArtwork()`——橡皮擦痕不算内容。② 修大图预览被画廊挡住：`.modal` 默认 z-index 60 < `.page` 70，预览藏在画廊背后看着像"没跳转"，给 `#viewer` 提到 75（仍低于 toast 80）。 |
 | 最新 | （本次） | **贴纸扩充到 57 个**：新增 4 位自绘「小公主」（金发/蓝裙/紫裙/橙裙，含皇冠、卷发、蓬蓬裙、腮红睫毛）+ 8 张自绘「祝福语」小牌子（生日快乐、天天开心、新年快乐、你好棒、我爱你、谢谢你、加油鸭、好喜欢你，各带星星/爱心/花朵/蝴蝶结/彩点装饰）；贴纸命名规范化为 `#<kind><idx>`，新增 `parseSticker()` / `STICKER_DRAW` / `stickerThumb()` / `stickerName()`，面板加「彩虹小马 / 小公主 / 祝福语」分组小标题，缩略图放大到 44px |
+| 最新 | （本次） | **三件新玩具① 对称魔法**：笔刷面板多一行「对称魔法」（关/2/4/6/8 份），开着一笔画下去会绕画布中心旋转出 N 份，随手画条弧线就是雪花/蝴蝶。副本不落数据，只在渲染时算（`it.sym` 记录份数），所以撤销、存档、导出、AI 看图全都自动一致；选中时预览层显示虚线轴，落笔即隐。**② 四支新魔法笔**：爱心💖、闪光💫、毛绒🧶、花瓣🌸（连同原有彩虹/星星/泡泡/烟花共 8 支魔法笔）。**③ 画画回放**：每个绘制对象记 `t0/t1` 时间戳，作品大图预览里新增「▶ 看看是怎么画出来的」，把这张画从头一笔一笔重放一遍（笔迹按点数露出半截，贴纸/图形到点出现），最多 9 秒；老作品没有时间戳则退化为每 0.42 秒一笔 |
 | — | `2fb7f8b` | 猜错不再重复猜：点「😂 猜错啦」就地认输（`spriteGiveUp()` 走本地俏皮话，不请求大模型），立刻弹出输入框请小朋友公布答案；删除 `MAX_GUESS` 轮次机制，连同前端与服务端的 `mode="wrong"` 全链路（`SYSTEM_WRONG`、`LIMITS.wrong`、`prev` 去重）一起清掉。现在每次打开最多消耗 2 次 API（猜一次 + 猜对/公布答案各一次） |
 
 ## 八、待办 / 已知问题
 
 - 双指缩放没有下限的意思是可以直接缩到看不见，可以加个最小尺寸限制
+- 对称魔法那一行在笔刷面板里要往下滑一点才露出来（13 支笔占了 3 行）；如果想更显眼，可以把对称做成工具栏上的独立开关
+- 画画回放的入口只在「作品大图预览」里，也就是**要先保存才能回放**；若想让正在画的这张也能回放，需要再找地方放一个入口（顶栏右侧已经有 4 个按钮，320px 宽下没有位置了，别再往顶栏加）
+- 回放只有画面，没有声音和进度条；想要更热闹可以在关键节点加配音效
 - 贴纸面板已加「彩虹小马 / 小公主 / 祝福语」分组小标题（57 个），但要滑到底才能看到新贴纸；如果还嫌深，可以考虑把这三个自绘分组提到最前面，或做成可折叠标题
 - 画廊上限 24 张，满了之后没有清理引导
 - iOS Safari 上的长按保存行为和安卓不一致，未系统验证
