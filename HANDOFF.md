@@ -71,8 +71,12 @@ python3 -c "import glob,os;[os.unlink(p) for p in glob.glob('.git/**/*.lock',rec
 `index.html` 内部的关键模块，按出现顺序：
 
 - `state.items` — 画面元素的矢量数组，**所有修改的唯一数据源**。任何变更都改它，然后 `redraw()` 全量重绘，撤销/重做靠 `pushHistory()` 存快照
-- `STICKERS` / `PONIES` / `SHAPES` — 贴纸（45 个，含 6 匹自绘彩虹小马）、图形（16 种）的数据定义
+- `STICKERS` / `PONIES` / `PRINCESSES` / `WORDS` / `SHAPES` — 贴纸（57 个：39 个 emoji + 6 匹小马 + 4 位小公主 + 8 张祝福语）、图形（16 种）的数据定义
 - `drawPony(ctx, idx, size)` — 小马是 canvas 矢量绘制的（不是图片），改配色改 `PONIES` 数组即可
+- **自绘贴纸的命名规范**：`#<kind><序号>`，如 `#pony2` / `#princess0` / `#word5`。要加新贴纸，三步：① 数据里加进 `STICKERS`；② 写一个 `drawXxx(ctx, idx, size)` 并登记到 `STICKER_DRAW = { pony, princess, word, ... }`；③ 在 `stickerName()` 里给中文名（小精灵介绍画作用）。
+  - `parseSticker(s)` 拆出 kind/idx，`stickerThumb(s)` 生成面板缩略图，`renderItem()` 里统一分派——加新种类不用改渲染主流程
+  - 惯例：绘制函数先 `ctx.scale(size,size)`，在 `[-0.5, 0.5]` 的单位坐标里作画（`drawWord` 例外，它按像素画横向牌子）
+  - 贴纸面板里 `"##名字"` 是分组小标题（`STICKER_GROUP`），会被 `buildStickers()` 跳过、不生成格子
 - 指针交互在 `pointerdown` / `pointermove` / `pointerup`，贴纸拖动相关的是 `hitSticker()`、`scheduleStickerPaint()`、`settleStickerDrag()`、`handOverDrag()`
 
 ## 五、改动时的硬约束
@@ -84,12 +88,15 @@ python3 -c "import glob,os;[os.unlink(p) for p in glob.glob('.git/**/*.lock',rec
 5. 拖动、缩放这类高频操作走 rAF 节流，别在 `pointermove` 里同步重绘整张画布。
 6. **DeepSeek API Key 只放 Cloudflare Pages 环境变量 `DEEPSEEK_API_KEY`**，绝不写进代码、仓库或前端。
 7. **弹窗层级（z-index）已成体系，改动务必复验**：`大图预览 #viewer 75` < `确认框 #modal 78` < `toast 80`，而「我的作品」这类整页 `.page` 是 **70**、`.modal` 基类默认只有 **60**。任何从 `.page`（画廊/设置页）里弹出的弹窗，都必须显式提到 70 以上，否则会被整页盖住——表现就是「点了没反应」。验证方法：用 `document.elementFromPoint(弹窗中心)` 断言命中的是弹窗内部元素，光看 `hidden` 类有没有去掉不够。
+8. **`roundRectPath()` 不会自己 `beginPath()`**（沿用 canvas 老习惯）。调用前必须自己 `ctx.beginPath()`，否则路径会累积——底色被填成「多个形状的并集」，相邻元素还会粘连。加自绘贴纸/新形状时特别注意。
 
 ## 六、验证方式
 
 没有浏览器也能验：用 headless Chrome + CDP 注入 pointer 事件，再用 `getImageData` 读像素做断言。
 
 **注意**：headless Chrome 和测试脚本必须写在**同一条 bash 命令**里先后执行——分开跑的话后台进程会被回收，端口和浏览器一起没了。启动参数要加 `--no-sandbox`，node 侧要设 `NO_PROXY='*'`。
+
+**headless 的 `--window-size` 不影响 `window.innerWidth`（实测恒为 500）**：想按手机宽度验证布局，必须把 app 放进 `<iframe style="width:375px">` 里、再截外层页面；否则你看到的「元素缺失/错位」只是截图把右边裁掉了的假象（踩过一次：以为「我爱你」缩略图没渲染，其实是 500px 布局被 375px 截图裁掉了第 5 列）。像素级确认可以用 `drawImage` 到离屏 canvas 数非透明像素比例。
 
 上一轮贴纸交互改动跑了 29 个交互用例 + 11 个回归用例。单纯用 stub DOM 测不出来「拖完松手贴纸消失」这种 bug，必须有真实像素断言。
 
@@ -107,11 +114,12 @@ python3 -c "import glob,os;[os.unlink(p) for p in glob.glob('.git/**/*.lock',rec
 | 最新 | `df180d5` | ✨ 图标时机：`updateSpriteBtn()` 补挂到 `pushHistory()`（画完一笔不重绘）与落笔瞬间；判空改 `hasArtwork()`（橡皮擦痕不算内容）；`#viewer` 提到 z-index 75 |
 | 最新 | `8eacd97`~ | 画廊点 ✕ 删不掉：`#modal` 提到 z-index 78，层级定为 **预览 75 < 确认框 78 < toast 80** |
 | — | （本次） | ① ✨ 出现时机修正：`pushHistory()` 里补调 `updateSpriteBtn()`（此前只在 `redraw()` 里更新，而画完一笔走的是 pushHistory，**导致画完了图标还不出现**），手指按下即显示；判空改为 `hasArtwork()`——橡皮擦痕不算内容。② 修大图预览被画廊挡住：`.modal` 默认 z-index 60 < `.page` 70，预览藏在画廊背后看着像"没跳转"，给 `#viewer` 提到 75（仍低于 toast 80）。 |
-| 最新 | `2fb7f8b` | **猜错不再重复猜**：点「😂 猜错啦」就地认输（`spriteGiveUp()` 走本地俏皮话，不请求大模型），立刻弹出输入框请小朋友公布答案；删除 `MAX_GUESS` 轮次机制，连同前端与服务端的 `mode="wrong"` 全链路（`SYSTEM_WRONG`、`LIMITS.wrong`、`prev` 去重）一起清掉。现在每次打开最多消耗 2 次 API（猜一次 + 猜对/公布答案各一次） |
+| 最新 | （本次） | **贴纸扩充到 57 个**：新增 4 位自绘「小公主」（金发/蓝裙/紫裙/橙裙，含皇冠、卷发、蓬蓬裙、腮红睫毛）+ 8 张自绘「祝福语」小牌子（生日快乐、天天开心、新年快乐、你好棒、我爱你、谢谢你、加油鸭、好喜欢你，各带星星/爱心/花朵/蝴蝶结/彩点装饰）；贴纸命名规范化为 `#<kind><idx>`，新增 `parseSticker()` / `STICKER_DRAW` / `stickerThumb()` / `stickerName()`，面板加「彩虹小马 / 小公主 / 祝福语」分组小标题，缩略图放大到 44px |
+| — | `2fb7f8b` | 猜错不再重复猜：点「😂 猜错啦」就地认输（`spriteGiveUp()` 走本地俏皮话，不请求大模型），立刻弹出输入框请小朋友公布答案；删除 `MAX_GUESS` 轮次机制，连同前端与服务端的 `mode="wrong"` 全链路（`SYSTEM_WRONG`、`LIMITS.wrong`、`prev` 去重）一起清掉。现在每次打开最多消耗 2 次 API（猜一次 + 猜对/公布答案各一次） |
 
 ## 八、待办 / 已知问题
 
 - 双指缩放没有下限的意思是可以直接缩到看不见，可以加个最小尺寸限制
-- 贴纸面板目前是网格平铺，45 个之后滑动手感一般，可以考虑分类
+- 贴纸面板已加「彩虹小马 / 小公主 / 祝福语」分组小标题（57 个），但要滑到底才能看到新贴纸；如果还嫌深，可以考虑把这三个自绘分组提到最前面，或做成可折叠标题
 - 画廊上限 24 张，满了之后没有清理引导
 - iOS Safari 上的长按保存行为和安卓不一致，未系统验证

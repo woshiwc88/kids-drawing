@@ -194,7 +194,8 @@ button{font-family:inherit;color:inherit;border:none;background:none;padding:0;c
   font-size:26px;line-height:1;transition:transform .1s,box-shadow .15s;
 }
 .cell i{font-style:normal;font-size:11px;font-weight:700;color:var(--ink-soft)}
-.stk-img{width:36px;height:36px;display:block;pointer-events:none}
+.stk-img{width:44px;height:44px;display:block;pointer-events:none}
+.stk-group{grid-column:1/-1;font-size:12px;font-weight:800;color:var(--ink-soft);letter-spacing:.5px;margin:4px 0 0}
 .cell .ic{width:30px;height:30px}
 .cell:active{transform:scale(.93)}
 .cell.on{background:#f1eaff;box-shadow:0 0 0 3px #cabaff inset}
@@ -609,8 +610,16 @@ const STICKERS = [
   // 玩具和小玩意
   "🎈","🎁","🎀","👑","🚗","🚀","⚽","🦄","🐝","🦋",
   // 彩虹小马（自绘）
-  "#pony0","#pony1","#pony2","#pony3","#pony4","#pony5"
+  "##彩虹小马",
+  "#pony0","#pony1","#pony2","#pony3","#pony4","#pony5",
+  // 小公主（自绘）
+  "##小公主",
+  "#princess0","#princess1","#princess2","#princess3",
+  // 祝福语（自绘）
+  "##祝福语",
+  "#word0","#word1","#word2","#word3","#word4","#word5","#word6","#word7"
 ];
+const STICKER_GROUP = "##";   // STICKERS 里以此开头的是分组标题，不是贴纸
 
 // 「彩虹小马」配色：body 身体、mane 鬃毛主色、mane2 鬃毛辅色、hoof 蹄子、horn 是否有独角
 const PONIES = [
@@ -621,6 +630,32 @@ const PONIES = [
   { body: "#e6d8ff", mane: "#7c5cff", mane2: "#c9a4ff", hoof: "#c2b0e7", horn: true  },
   { body: "#ffe4ef", mane: "#ff5c8a", mane2: "#ffd23f", hoof: "#f0bfd0", horn: true  }
 ];
+
+// 「小公主」：skin 肤色 / dress 裙子 / dress2 裙摆花边 / hair 头发 / jewel 皇冠宝石
+const PRINCESSES = [
+  { skin: "#ffe3d2", dress: "#ff9ecf", dress2: "#fff0f7", hair: "#ffc93c", jewel: "#ff5c8a" },
+  { skin: "#ffe3d2", dress: "#7ec8ff", dress2: "#e6f5ff", hair: "#a9714a", jewel: "#7c5cff" },
+  { skin: "#ffdcc0", dress: "#c39bff", dress2: "#f3e9ff", hair: "#4a3a52", jewel: "#ffd23f" },
+  { skin: "#ffe3d2", dress: "#ffd23f", dress2: "#fff6da", hair: "#e8703a", jewel: "#37c463" }
+];
+
+// 「祝福语」：底色 bg / 文字 ink / 外框边 edge / 小装饰 deco
+const WORDS = [
+  { text: "生日快乐", bg: "#ff8fc0", ink: "#fff",    edge: "#ff5c9e", deco: "confetti" },
+  { text: "天天开心", bg: "#ffc93c", ink: "#7a4a00", edge: "#ff9a2e", deco: "star"    },
+  { text: "新年快乐", bg: "#f0523f", ink: "#fff5cc", edge: "#ffd23f", deco: "sparkle" },
+  { text: "你好棒",   bg: "#4cc86b", ink: "#fff",    edge: "#2ea44f", deco: "thumb"   },
+  { text: "我爱你",   bg: "#ff6f9c", ink: "#fff",    edge: "#e8435f", deco: "heart"   },
+  { text: "谢谢你",   bg: "#b48cff", ink: "#fff",    edge: "#8b5cf6", deco: "flower"  },
+  { text: "加油鸭",   bg: "#4a90ff", ink: "#fff",    edge: "#2f6fd0", deco: "bow"     },
+  { text: "好喜欢你", bg: "#5ed6c4", ink: "#084b44", edge: "#2fb8a4", deco: "heart2"  }
+];
+
+// 自绘贴纸统一命名：#<kind><序号>，例如 #pony0 / #princess2 / #word5
+function parseSticker(s) {
+  const m = /^#([a-z]+)(\d+)$/i.exec(String(s || ""));
+  return m ? { kind: m[1].toLowerCase(), idx: parseInt(m[2], 10) || 0 } : null;
+}
 
 // 图形（全部矢量绘制；icon 是面板按钮上的 SVG 轮廓）
 const SHAPES = [
@@ -1129,19 +1164,248 @@ function drawPony(ctx, idx, size) {
   ctx.restore();
 }
 
-// 小马贴纸在面板里的缩略图（离屏画一次后缓存成 dataURL）
-const ponyThumbCache = {};
-function ponyThumb(idx) {
-  if (ponyThumbCache[idx]) return ponyThumbCache[idx];
+// —— 小公主：Q 版大头小公主（自绘矢量）。坐标系与 drawPony 一致：先 scale(size)，在 [-0.5,0.5] 里作画 —— 
+function drawPrincess(ctx, idx, size) {
+  const n = PRINCESSES.length;
+  const P = PRINCESSES[((idx % n) + n) % n];
+  ctx.save();
+  ctx.scale(size, size);
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+
+  // 后层头发：脑袋轮廓 + 两侧披发 + 发尾小卷
+  ctx.fillStyle = P.hair;
+  ctx.beginPath(); ctx.ellipse(0, -0.10, 0.205, 0.215, 0, 0, Math.PI * 2); ctx.fill();
+  for (const s of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(s * 0.150, -0.215);
+    ctx.quadraticCurveTo(s * 0.300, 0.000, s * 0.185, 0.130);
+    ctx.quadraticCurveTo(s * 0.115, 0.020, s * 0.110, -0.200);
+    ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.arc(s * 0.198, 0.150, 0.048, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // 裙摆（波浪花边的蓬蓬裙）
+  ctx.fillStyle = P.dress;
+  ctx.beginPath();
+  ctx.moveTo(-0.120, -0.020);
+  ctx.quadraticCurveTo(-0.170, 0.140, -0.260, 0.300);
+  ctx.quadraticCurveTo(-0.130, 0.400, 0, 0.330);
+  ctx.quadraticCurveTo(0.130, 0.400, 0.260, 0.300);
+  ctx.quadraticCurveTo(0.170, 0.140, 0.120, -0.020);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = P.dress2;
+  ctx.beginPath();
+  ctx.moveTo(-0.260, 0.300);
+  ctx.quadraticCurveTo(-0.130, 0.400, 0, 0.330);
+  ctx.quadraticCurveTo(0.130, 0.400, 0.260, 0.300);
+  ctx.quadraticCurveTo(0.150, 0.248, 0, 0.258);
+  ctx.quadraticCurveTo(-0.150, 0.248, -0.260, 0.300);
+  ctx.closePath(); ctx.fill();
+
+  // 上身 + 领口宝石
+  ctx.fillStyle = P.dress;
+  ctx.beginPath(); ctx.ellipse(0, -0.045, 0.105, 0.100, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = P.jewel;
+  ctx.beginPath(); ctx.arc(0, 0.015, 0.022, 0, Math.PI * 2); ctx.fill();
+
+  // 两只小手臂
+  ctx.strokeStyle = P.skin; ctx.lineWidth = 0.048;
+  for (const s of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(s * 0.082, -0.050);
+    ctx.quadraticCurveTo(s * 0.150, -0.020, s * 0.158, 0.048);
+    ctx.stroke();
+  }
+
+  // 脸
+  ctx.fillStyle = P.skin;
+  ctx.beginPath(); ctx.arc(0, -0.150, 0.155, 0, Math.PI * 2); ctx.fill();
+
+  // 刘海（压在脸的上方）
+  ctx.fillStyle = P.hair;
+  ctx.beginPath();
+  ctx.moveTo(-0.155, -0.130);
+  ctx.quadraticCurveTo(-0.160, -0.320, 0, -0.315);
+  ctx.quadraticCurveTo(0.160, -0.320, 0.155, -0.130);
+  ctx.quadraticCurveTo(0.105, -0.198, 0.045, -0.152);
+  ctx.quadraticCurveTo(0.000, -0.215, -0.050, -0.152);
+  ctx.quadraticCurveTo(-0.110, -0.200, -0.155, -0.130);
+  ctx.closePath(); ctx.fill();
+
+  // 小王冠
+  ctx.fillStyle = "#ffd86b";
+  ctx.beginPath();
+  ctx.moveTo(-0.115, -0.272); ctx.lineTo(-0.078, -0.408); ctx.lineTo(-0.030, -0.298);
+  ctx.lineTo(0, -0.452); ctx.lineTo(0.030, -0.298); ctx.lineTo(0.078, -0.408);
+  ctx.lineTo(0.115, -0.272);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = "#f0b429"; ctx.lineWidth = 0.016; ctx.stroke();
+  ctx.fillStyle = "#ffe9a8";
+  ctx.beginPath();
+  roundRectPath(ctx, -0.118, -0.300, 0.236, 0.048, 0.018); ctx.fill();
+  ctx.fillStyle = P.jewel;
+  ctx.beginPath(); ctx.arc(0, -0.276, 0.026, 0, Math.PI * 2); ctx.fill();
+
+  // 大眼睛 + 高光 + 翘睫毛
+  const eyeY = -0.132;
+  ctx.fillStyle = "#3b2c4a";
+  for (const s of [-1, 1]) {
+    ctx.beginPath(); ctx.ellipse(s * 0.062, eyeY, 0.033, 0.041, 0, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.fillStyle = "#fff";
+  for (const s of [-1, 1]) {
+    ctx.beginPath(); ctx.arc(s * 0.053, eyeY - 0.015, 0.013, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.strokeStyle = "#3b2c4a"; ctx.lineWidth = 0.013;
+  for (const s of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(s * 0.092, eyeY - 0.016);
+    ctx.quadraticCurveTo(s * 0.128, eyeY - 0.036, s * 0.140, eyeY - 0.064);
+    ctx.stroke();
+  }
+
+  // 腮红 + 微笑
+  ctx.fillStyle = "rgba(255,120,170,.34)";
+  for (const s of [-1, 1]) {
+    ctx.beginPath(); ctx.ellipse(s * 0.098, -0.072, 0.038, 0.024, 0, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.strokeStyle = "#d4576f"; ctx.lineWidth = 0.014;
+  ctx.beginPath();
+  ctx.moveTo(-0.030, -0.078); ctx.quadraticCurveTo(0, -0.046, 0.030, -0.078);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+// 祝福语旁边的小装饰
+function drawWordDeco(ctx, kind, w, h) {
+  const R = h * 0.5;
+  const sideX = w / 2 + R * 0.32;
+  switch (kind) {
+    case "star":
+      ctx.fillStyle = "#ffd23f";
+      for (const s of [-1, 1]) {
+        ctx.beginPath(); starPath(ctx, s * sideX, 0, R * 0.46, 5, 0.45); ctx.fill();
+      }
+      break;
+    case "shine":
+      ctx.fillStyle = "#fff2a8";
+      ctx.beginPath(); starPath(ctx, 0, -R * 0.95, R * 0.46, 5, 0.45); ctx.fill();
+      for (const s of [-1, 1]) {
+        ctx.beginPath(); starPath(ctx, s * (w / 2 + R * 0.30), R * 0.62, R * 0.30, 5, 0.45); ctx.fill();
+      }
+      break;
+    case "sparkle":
+      ctx.fillStyle = "#ffe9a8";
+      for (const s of [-1, 1]) for (const t of [-1, 1]) {
+        ctx.beginPath(); starPath(ctx, s * sideX, t * (h / 2 + R * 0.30), R * 0.36, 4, 0.28, -Math.PI / 2); ctx.fill();
+      }
+      break;
+    case "heart":
+    case "heart2":
+      ctx.fillStyle = kind === "heart" ? "#ffd6e2" : "#ff6f9c";
+      for (const s of (kind === "heart" ? [-1, 1] : [-1.55, 1.55])) {
+        ctx.beginPath(); heartPath(ctx, s * sideX, 0, R * 0.78, R * 0.78); ctx.fill();
+      }
+      break;
+    case "flower":
+      for (const s of [-1, 1]) {
+        const cx = s * sideX, r = R * 0.50;
+        ctx.fillStyle = "#ffd6e2";
+        for (let k = 0; k < 5; k++) {
+          const a = k * Math.PI * 2 / 5 - Math.PI / 2;
+          ctx.beginPath(); ctx.arc(cx + Math.cos(a) * r * 0.80, Math.sin(a) * r * 0.80, r * 0.60, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.fillStyle = "#ffd23f";
+        ctx.beginPath(); ctx.arc(cx, 0, r * 0.42, 0, Math.PI * 2); ctx.fill();
+      }
+      break;
+    case "bow":
+      ctx.fillStyle = "#ffb3d0";
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(s * sideX * 0.75, -R * 0.36);
+        ctx.quadraticCurveTo(s * (sideX * 0.75 + R * 0.62), 0, s * sideX * 0.75, R * 0.36);
+        ctx.quadraticCurveTo(s * (sideX * 0.75 - R * 0.06), 0, s * sideX * 0.75, -R * 0.36);
+        ctx.closePath(); ctx.fill();
+      }
+      ctx.fillStyle = "#fff";
+      ctx.beginPath(); ctx.arc(0, 0, R * 0.17, 0, Math.PI * 2); ctx.fill();
+      break;
+    case "confetti": {
+      const cs = ["#ffd23f", "#7ec8ff", "#ff8fc0", "#b0f0d0"];
+      for (let i = 0; i < 8; i++) {
+        const a = i * Math.PI / 4;
+        ctx.save();
+        ctx.translate(Math.cos(a) * (w / 2 + R * 0.62), Math.sin(a) * (h / 2 + R * 0.52));
+        ctx.rotate(a);
+        ctx.fillStyle = cs[i % cs.length];
+        ctx.fillRect(-R * 0.12, -R * 0.12, R * 0.24, R * 0.24);
+        ctx.restore();
+      }
+      break;
+    }
+  }
+}
+
+// —— 祝福语贴纸：圆角小牌子 + 中文字 + 小装饰（全部自绘，不用位图）——
+function drawWord(ctx, idx, size) {
+  const n = WORDS.length;
+  const W = WORDS[((idx % n) + n) % n];
+  const len = [...W.text].length;
+  const h = size * 0.56;
+  const w = Math.max(h * 1.45, size * (0.30 + len * 0.245));
+  ctx.save();
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+
+  drawWordDeco(ctx, W.deco, w, h);
+
+  // 外框 + 内底（做出贴纸的白边感）
+  ctx.fillStyle = W.edge;
+  ctx.beginPath();
+  roundRectPath(ctx, -w / 2, -h / 2, w, h, h * 0.42); ctx.fill();
+  ctx.fillStyle = W.bg;
+  ctx.beginPath();
+  roundRectPath(ctx, -w / 2 + h * 0.09, -h / 2 + h * 0.09, w - h * 0.18, h - h * 0.18, h * 0.34); ctx.fill();
+
+  // 文字
+  ctx.font = '900 ' + Math.round(h * 0.45) + 'px "PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif';
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const light = W.ink === "#fff" || W.ink === "#fff5cc";
+  if (light) {                      // 浅色字加一点暗边，浅底上也看得清
+    ctx.lineWidth = Math.max(1.2, h * 0.07);
+    ctx.strokeStyle = "rgba(120,40,80,.20)";
+    ctx.strokeText(W.text, 0, h * 0.02);
+  }
+  ctx.fillStyle = W.ink;
+  ctx.fillText(W.text, 0, h * 0.02);
+
+  ctx.restore();
+}
+
+// 自绘贴纸 → 绘制函数
+const STICKER_DRAW = { pony: drawPony, princess: drawPrincess, word: drawWord };
+
+// 贴纸在面板里的缩略图（离屏画一次后缓存成 dataURL）
+const stickerThumbCache = {};
+function stickerThumb(s) {
+  if (stickerThumbCache[s]) return stickerThumbCache[s];
+  const p = parseSticker(s);
+  const draw = p && STICKER_DRAW[p.kind];
+  if (!draw) return "";
   const px = 44, dpr = 2;
   const cv = document.createElement("canvas");
   cv.width = px * dpr; cv.height = px * dpr;
   const c = cv.getContext("2d");
   c.setTransform(dpr, 0, 0, dpr, 0, 0);
   c.translate(px / 2, px / 2);
-  drawPony(c, idx, px * 0.98);
+  // 祝福语是横向的牌子，等比缩小才不会溢出方格
+  draw(c, p.idx, px * (p.kind === "word" ? 0.70 : 1.0));
   const url = cv.toDataURL();
-  ponyThumbCache[idx] = url;
+  stickerThumbCache[s] = url;
   return url;
 }
 
@@ -1163,10 +1427,11 @@ function renderItem(ctx, it) {
   if (it.type === "sticker") {
     ctx.translate(it.x, it.y);
     ctx.rotate(it.rot || 0);
-    if (it.emoji.charAt(0) === "#") {
-      // 自绘矢量贴纸（#ponyN）
-      drawPony(ctx, parseInt(it.emoji.slice(5), 10) || 0, it.size);
-    } else {
+    const sp = parseSticker(it.emoji);
+    const drawFn = sp && STICKER_DRAW[sp.kind];
+    if (drawFn) drawFn(ctx, sp.idx, it.size);
+    else if (String(it.emoji).charAt(0) === "#") drawPony(ctx, 0, it.size);   // 认不出来的旧数据兜底
+    else {
       ctx.font = it.size + 'px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
@@ -1290,7 +1555,7 @@ function hitSticker(p) {
     const lx = dx * cs - dy * sn, ly = dx * sn + dy * cs;   // 反旋转到贴纸自身坐标
     const loose = (state.tool === "sticker");               // 贴纸模式下判定放宽
     const ry = Math.max(it.size * (loose ? 0.62 : 0.46), GRAB_MIN);
-    const rx = ry * 1.25;                                   // 自绘小马横向更长，命中框跟着放宽
+    const rx = ry * (String(it.emoji).indexOf("#word") === 0 ? 1.7 : 1.25);   // 祝福语是横向牌子，横向更容易抓到
     if ((lx * lx) / (rx * rx) + (ly * ly) / (ry * ry) <= 1) return it;
   }
   return null;
@@ -1711,12 +1976,19 @@ function buildStickers() {
   const box = $("stickerGrid");
   box.innerHTML = "";
   STICKERS.forEach(s => {
-    const isPony = s.charAt(0) === "#";
+    if (s.indexOf(STICKER_GROUP) === 0) {          // 分组小标题
+      const h = document.createElement("div");
+      h.className = "stk-group";
+      h.textContent = s.slice(STICKER_GROUP.length);
+      box.appendChild(h);
+      return;
+    }
+    const selfDrawn = s.charAt(0) === "#";
     const b = document.createElement("button");
     b.className = "cell";
     b.dataset.sticker = s;
-    b.innerHTML = isPony
-      ? `<img class="stk-img" alt="小马" src="${ponyThumb(parseInt(s.slice(5), 10) || 0)}">`
+    b.innerHTML = selfDrawn
+      ? `<img class="stk-img" alt="自绘贴纸" src="${stickerThumb(s)}">`
       : `<span>${s}</span>`;
     b.addEventListener("click", () => {
       state.sticker = s;
@@ -1724,7 +1996,7 @@ function buildStickers() {
       state.shapeTool = false;
       document.querySelectorAll("#stickerGrid .cell").forEach(el => el.classList.toggle("on", el.dataset.sticker === s));
       markTabs(); markBrush();
-      toast(isPony ? "点一下画布，贴上小马 🐴" : "点一下画布，贴上 " + s);
+      toast("点一下画布，贴上" + stickerName(s) + " ✨");
     });
     box.appendChild(b);
   });
@@ -2182,6 +2454,21 @@ const STICKER_NAMES = {
   "🎈":"气球","🎁":"礼物","🎀":"蝴蝶结","👑":"皇冠","🚗":"小汽车","🚀":"火箭","⚽":"足球","🦄":"独角兽","🐝":"小蜜蜂","🦋":"蝴蝶"
 };
 const PONY_NAMES = ["粉色小马","蓝色小马","黄色小马","绿色小马","紫色独角小马","粉色独角小马"];
+const PRINCESS_NAMES = ["金发小公主","蓝裙小公主","紫裙小公主","橙裙小公主"];
+
+// 贴纸的中文名字：小精灵介绍画作、toast 提示都用它
+function stickerName(s) {
+  const p = parseSticker(s);
+  if (p) {
+    if (p.kind === "princess") return PRINCESS_NAMES[p.idx] || "小公主";
+    if (p.kind === "word") {
+      const w = WORDS[p.idx];
+      return w ? w.text : "祝福语";
+    }
+    return PONY_NAMES[p.idx] || "彩虹小马";
+  }
+  return STICKER_NAMES[s] || "小贴纸";
+}
 
 function colorName(hex) {
   const f = COLORS.find(c => c.c.toLowerCase() === String(hex || "").toLowerCase());
@@ -2195,10 +2482,7 @@ function describeArtwork() {
   let strokeN = 0;
   state.items.forEach(it => {
     if (it.type === "sticker") {
-      let name = "小贴纸";
-      if (String(it.emoji).charAt(0) === "#") name = PONY_NAMES[+String(it.emoji).slice(5)] || "彩虹小马";
-      else if (STICKER_NAMES[it.emoji]) name = STICKER_NAMES[it.emoji];
-      stickerCount[name] = (stickerCount[name] || 0) + 1;
+      stickerCount[stickerName(it.emoji)] = (stickerCount[stickerName(it.emoji)] || 0) + 1;
     } else if (it.type === "shape") {
       const sh = SHAPES.find(s => s.id === it.shape);
       const cn = colorName(it.color);
@@ -2425,7 +2709,10 @@ function localSay(mode, answer) {
   const info = spriteInfo || { stickers: [], colors: [] };
   if (mode === "right") return "耶！我猜对啦，豆豆画得最最棒！🎉";
   if (mode === "reveal") return "哇！原来是" + (answer || "这个") + "！豆豆教教我好不好？✨";
-  if (info.stickers && info.stickers[0]) return "我猜这是一个" + info.stickers[0] + "！✨";
+  const s0 = (info.stickers && info.stickers[0]) || "";
+  if (s0) return WORDS.some(w => w.text === s0)
+    ? "我猜你在说“" + s0 + "”，对不对呀？✨"
+    : "我猜这是一个" + s0 + "！✨";
   if (info.colors && info.colors[0]) return "我猜是一片" + info.colors[0] + "的云朵！☁️";
   return "我猜这是一个大大的太阳！☀️";
 }
